@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>时段色板对照 · XR 个人站</title>
+    <link rel="stylesheet" href="./palette-review.css" />
+  </head>
+  <body>
+    <h1>时段色板对照</h1>
+    <p class="hint">
+      开发环境专用：拖动时间轴查看任意时刻的插值结果，用来确认「颜色随本地时间连续过渡、无明显切换点」。
+      生产构建不包含本页（Vite 只以 <code>index.html</code> 为入口）。<br />
+      数据直接来自 <code>src/theme/palette.ts</code> —— 这里看到的就是线上实际使用的色值。
+    </p>
+
+    <div class="panel">
+      <div class="row">
+        <label for="time">时刻</label>
+        <input id="time" type="range" min="0" max="1439" step="1" value="0" />
+        <strong id="clock">--:--</strong>
+        <button id="follow" type="button" aria-pressed="false">跟随真实时间</button>
+      </div>
+      <div class="row">
+        <div id="strip" class="strip" style="flex: 1"></div>
+      </div>
+      <div class="row" id="liveSummary"></div>
+    </div>
+
+    <h2>8 个时段锚点（点击跳到该时刻）</h2>
+    <div class="anchors" id="anchors"></div>
+
+    <h2>当前插值结果</h2>
+    <div class="panel now">
+      <div class="now__swatch" id="nowSwatch"></div>
+      <div>
+        <div id="nowLabel" class="now__label"></div>
+        <div id="nowValues" class="now__values"></div>
+      </div>
+    </div>
+
+    <h2>连续性与边界</h2>
+    <div class="panel" id="continuity"></div>
+
+    <h2>一天里的取样（每 3 小时）</h2>
+    <div class="grid" id="samples"></div>
+
+    <!-- 脚本必须是独立文件：Vite 对子目录 HTML 里的内联 module script 会走 html-proxy 而报错 -->
+    <script type="module" src="./palette-review.js"></script>
+  </body>
+</html>

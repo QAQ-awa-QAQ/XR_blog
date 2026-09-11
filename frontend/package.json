@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run check",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "npm run check:content && npm run check:motion && npm run check:theme",
+    "check:content": "node --experimental-strip-types --test scripts/check-content.mjs",
+    "check:motion": "node --experimental-strip-types --test scripts/check-motion.mjs",
+    "check:theme": "node --experimental-strip-types --test scripts/check-theme.mjs"
   },
   "dependencies": {
     "gsap": "^3.13.0",

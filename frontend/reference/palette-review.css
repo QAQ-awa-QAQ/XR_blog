@@ -1,0 +1,114 @@
+/* 样式与对照页放在一起；本页不进入生产构建。 */
+:root {
+  --bg: #f2f8fd;
+  --fg: #0b1220;
+  --muted: rgba(11, 18, 32, 0.62);
+  --line: rgba(11, 18, 32, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 32px clamp(16px, 4vw, 48px) 64px;
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  color: var(--fg);
+  background: linear-gradient(160deg, #fafafa, #eef2f7);
+  transition: background 0.4s linear, color 0.2s linear;
+}
+
+h1 { margin: 0 0 6px; font-size: 22px; }
+
+h2 {
+  margin: 32px 0 12px;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hint { margin: 0 0 24px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+
+.panel {
+  padding: 20px 22px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.row + .row { margin-top: 14px; }
+
+input[type='range'] { flex: 1; min-width: 240px; accent-color: var(--accent, #0284c7); }
+
+button {
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.4);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover { background: rgba(255, 255, 255, 0.7); }
+button[aria-pressed='true'] { border-color: var(--accent, #0284c7); }
+
+code { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+
+.strip { height: 56px; border-radius: 14px; border: 1px solid var(--line); }
+
+.anchors { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+
+.anchor {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  text-align: left;
+}
+
+.anchor__swatch { height: 40px; border-radius: 9px; margin-bottom: 8px; border: 1px solid var(--line); }
+.anchor__name { font-size: 13px; font-weight: 600; }
+.anchor__meta { font-size: 11px; color: var(--muted); }
+
+.now { display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center; }
+.now__swatch { height: 140px; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.6); }
+.now__label { font-size: 18px; font-weight: 600; }
+.now__values { margin-top: 10px; line-height: 1.9; font-size: 13px; }
+.swatch-inline {
+  display: inline-block;
+  width: 26px;
+  height: 11px;
+  border-radius: 3px;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+
+.cell {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  min-height: 108px;
+  display: grid;
+  align-content: space-between;
+}
+
+.cell__time { font-size: 12px; opacity: 0.72; }
+.cell__glass {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px) saturate(180%);
+}
