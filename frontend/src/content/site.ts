@@ -46,6 +46,7 @@ export type SiteContent = {
     items: ContactItem[]
     qr: { label: string; note: string }
   }
+  more: SectionCopy
 }
 
 export const SITE: SiteContent = {
@@ -89,5 +90,10 @@ export const SITE: SiteContent = {
       { title: '社交账号', value: '@example', hint: '日常碎碎念' },
     ],
     qr: { label: '二维码', note: '待替换' },
+  },
+  more: {
+    eyebrow: 'More',
+    title: '更多',
+    desc: '本站的基本信息与当前账户。主题色随本地时间连续过渡，不需要手动切换。',
   },
 }

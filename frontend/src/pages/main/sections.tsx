@@ -1,4 +1,13 @@
 import { SITE, type IconName } from '../../content/site'
+import type { User } from '../../api/client'
+
+/** 「更多」页需要的东西：当前账户与退出动作 */
+type MoreProps = {
+  user: User
+  themeLabel: string
+  accent: string
+  onLogout: () => void
+}
 
 /**
  * 三个页面的内容。
@@ -134,6 +143,59 @@ export function ContactSection() {
           <div className="qr">{contact.qr.note}</div>
           <span className="field__hint">放置微信或名片二维码</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/** 「更多」页：站名、当前账户，以及两个动作（设计稿里“其他信息”的安置处） */
+export function MoreSection({ user, themeLabel, accent, onLogout }: MoreProps) {
+  const { more } = SITE
+
+  return (
+    <div>
+      <header className="section__head">
+        <span className="section__eyebrow" data-reveal>
+          {more.eyebrow}
+        </span>
+        <h2 className="section__title" data-reveal>
+          {more.title}
+        </h2>
+        <p className="section__desc" data-reveal>
+          {more.desc}
+        </p>
+      </header>
+
+      <div className="more">
+        <div className="glass more__card" data-reveal>
+          <span className="tag">本站</span>
+          <span className="more__brand">{SITE.brand}</span>
+          <span className="field__hint">{SITE.welcome.subtitle}</span>
+        </div>
+
+        <div className="glass more__card" data-reveal>
+          <span className="tag">账户</span>
+          <span className="more__identity" title={`主题色 ${accent}（随本地时间连续过渡）`}>
+            <span className="more__swatch" style={{ background: accent }} aria-hidden="true" />
+            <span className="more__who">
+              {themeLabel} · {user.nickname}
+            </span>
+          </span>
+          <span className="field__hint">
+            {user.role === 'admin' ? '管理员：可进入后台管理内容' : '普通用户'}
+          </span>
+        </div>
+      </div>
+
+      <div className="more__actions" data-reveal>
+        {user.role === 'admin' ? (
+          <a className="btn btn--glass" href="/admin">
+            管理后台
+          </a>
+        ) : null}
+        <button type="button" className="btn btn--ghost" onClick={onLogout}>
+          退出登录
+        </button>
       </div>
     </div>
   )

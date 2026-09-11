@@ -1,93 +1,156 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import gsap from 'gsap'
-import { SITE } from '../../content/site'
 import { durations, easings } from '../../motion/tokens'
-import type { User } from '../../api/client'
+import {
+  ICON_SCALE_IDLE,
+  ICON_SIZE,
+  ICON_VIEWBOX,
+  NAV_ICON_PATHS,
+  type NavSectionKey,
+} from '../../design/icons'
 
-export type SectionId = 'intro' | 'features' | 'contact'
+/** 侧栏导航里的四个分区。键就是 design/icons.ts 的图标名（那个联合类型只定义一次） */
+export type SectionId = NavSectionKey
 
 type Props = {
   items: { id: SectionId; label: string }[]
   active: number
   onSelect: (index: number) => void
-  user: User
-  themeLabel: string
-  accent: string
-  onLogout: () => void
 }
 
 const prefersReducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** 「更多」图标：三个圆点的两种横向排布（未展开 / 已连成一条线） */
-const DOTS_CLOSED = { x: [3, 10.3, 17.6], width: 3.4, rx: 1.7 }
-/** 展开后三段圆角归零、相邻重叠 2.25 单位（≈1px CSS），融成**一条完整的线**。
-    重叠要够大：只相切时抗锯齿会在接缝留一道半透明缝，看着仍是三个方块；
-    而高分屏（dpr≥2）下 1px 的重叠才稳定盖住那条缝。同色不透明矩形重叠不会变深。
-    整条线仍是 3→21，中心 12。 */
-const DOTS_OPEN = { x: [3, 8.25, 13.5], width: 7.5, rx: 0 }
-/** 视图中心与箭头顶点（SVG 用户坐标） */
-const STEM_ORIGIN = '12 12'
-const HEAD_ORIGIN = '12 3.5'
-/** 菜单滑入的起始下移量（px）。
-    只让高度从 0 变到自然高，曲线是「看不出来」的；
-    配一个真实的 y 位移，滑动才有过程感 */
-const MENU_SLIDE = 16
+/** 把图标的两个设计参数交给 CSS：基准尺寸与未选中态的倍率 */
+type IconVars = CSSProperties & {
+  '--icon-size': string
+  '--icon-scale-idle': number
+}
+
+/** 导航图标。渲染口径与 sections.tsx 的功能卡片图标一致：只描边、圆头、1.7 */
+function NavIcon({ paths }: { paths: readonly string[] }) {
+  return (
+    <svg
+      width={ICON_SIZE}
+      height={ICON_SIZE}
+      viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths.map((d) => (
+        <path key={d} d={d} />
+      ))}
+    </svg>
+  )
+}
 
 /**
- * 侧栏：由上到下为 简介 / 功能 / 联系（design.md 2.5）。
+ * 侧栏：竖排胶囊里四个等大的按钮 —— 首页 / 功能 / 联系 / 更多。
  *
- * 三处刻意的实现选择：
- * 1. 选中态是**滑动指示条**（GSAP + smootherstep），不是按钮之间的颜色淡入淡出。
- * 2. 页脚压成一行；点「更多」时**分隔线与身份行整体上抬**，菜单从下方被拉出来
- *    —— 因为页脚是 `margin-top: auto` 贴底，内容变高时顶边自然上移，不需要额外位移。
- * 3. 图标点击后形变：三个圆点连成一条横线 → 整体转 90° → 顶部展出箭头，最终呈 ↑。
+ * 四处刻意的实现选择：
+ * 1. 按钮**只剩图标**：侧栏收到 42px 后连「简介」两个字都排不下。
+ *    代价是标签得换一条路可读 —— `aria-label` 给屏幕阅读器、`title` 给鼠标用户，
+ *    两者都取 SECTIONS 里的中文标签。
+ * 2. 四个按钮地位完全相同，都在指示条队列里：第四个「更多」也是一个**页面**
+ *    （放站名、时段与身份、管理后台、退出登录），不是弹出菜单。
+ * 3. 图标是设计参数，放在 `src/design/icons.ts`；未选中 / 选中靠**倍率**区分，
+ *    所以这里把它写成 CSS 变量交给样式表，而不是在 TSX 里按 aria-current 分支。
+ * 4. `aria-current` 同时驱动图标倍率与颜色，避免“选中”这件事散成好几处判断。
+ * 5. 面板的壳（描边 / 内高光 / 内反光）不在面板本体上，而在 `.sidebar__edge` 上 ——
+ *    胶囊比面板大一圈，画在本体上的框线会从胶囊内部穿过。壳层用一个跟随胶囊的
+ *    「洞」（CSS mask 的 exclude）挖掉胶囊覆盖的区域：不求轮廓交点，**形状本身就是答案**。
  */
-export function Sidebar({
-  items,
-  active,
-  onSelect,
-  user,
-  themeLabel,
-  accent,
-  onLogout,
-}: Props) {
+export function Sidebar({ items, active, onSelect }: Props) {
+  const asideRef = useRef<HTMLElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const pillRef = useRef<HTMLSpanElement>(null)
-  const footRef = useRef<HTMLDivElement>(null)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
 
-  const menuWrapRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const stemRef = useRef<SVGGElement>(null)
-  const headRef = useRef<SVGPathElement>(null)
-  const dotRefs = useRef<(SVGRectElement | null)[]>([])
+  // 壳层上那个「洞」的当前值。用一个普通对象交给 GSAP tween，
+  // 再在 onUpdate 里写进 CSS 变量 —— 这样洞与指示条**同一条曲线、同一时刻**移动，
+  // 不会各走各的露出半截断口
+  const cutRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
 
-  const [menuOpen, setMenuOpen] = useState(false)
+  // 图标参数来自 design/icons.ts，这里只负责把它交给样式表
+  const iconVars: IconVars = {
+    '--icon-size': `${ICON_SIZE}px`,
+    '--icon-scale-idle': ICON_SCALE_IDLE,
+  }
 
-  // 指示条落位：animate=true 时滑过去，false 时直接放置
+  const writeCut = () => {
+    const style = asideRef.current?.style
+    if (!style) return
+    const cut = cutRef.current
+    style.setProperty('--cut-x', `${cut.x}px`)
+    style.setProperty('--cut-y', `${cut.y}px`)
+    style.setProperty('--cut-w', `${cut.width}px`)
+    style.setProperty('--cut-h', `${cut.height}px`)
+  }
+
+  // 指示条落位：animate=true 时滑过去，false 时直接放置。
+  //
+  // 用 getBoundingClientRect 的**差值**，而不是 offsetLeft / offsetTop / offsetWidth：
+  // 后者是整数 API，而胶囊高 75.6px —— 取整会让指示条比按钮高出 0.4px，
+  // 四个按钮的位置误差还会逐步累积。rect 拿到的是真实布局值，两者像素级重合。
+  // （安全：.shell / .sidebar / .sidebar__nav 上都没有 transform，
+  //   所以 rect 不会被祖先的变换污染。）
   const placePill = (animate: boolean) => {
     const pill = pillRef.current
+    const nav = navRef.current
+    const aside = asideRef.current
     const target = buttonRefs.current[active]
-    if (!pill || !target) return
+    if (!pill || !nav || !aside || !target) return
 
-    const box = {
-      x: target.offsetLeft,
-      y: target.offsetTop,
-      width: target.offsetWidth,
-      height: target.offsetHeight,
+    const navBox = nav.getBoundingClientRect()
+    const asideBox = aside.getBoundingClientRect()
+    const box = target.getBoundingClientRect()
+
+    const next = {
+      x: box.left - navBox.left,
+      y: box.top - navBox.top,
+      width: box.width,
+      height: box.height,
       opacity: 1,
     }
 
+    // 壳层的「洞」是相对 .sidebar 的 padding box 定位的（壳层就铺在那里）
+    const cut = {
+      x: box.left - asideBox.left,
+      y: box.top - asideBox.top,
+      width: box.width,
+      height: box.height,
+    }
+
     if (!animate || prefersReducedMotion()) {
-      gsap.set(pill, box)
+      gsap.set(pill, { ...next, autoRound: false })
+      Object.assign(cutRef.current, cut)
+      writeCut()
       return
     }
+
+    gsap.to(cutRef.current, {
+      ...cut,
+      duration: durations.navSlide,
+      ease: easings.snappy,
+      onUpdate: writeCut,
+      // 注意：这里**不能**传 autoRound —— 它是 CSSPlugin 的专属属性，
+      // 对普通 JS 对象会被 GSAP 当成未知属性，直接报
+      // 「Invalid property autoRound ... Missing plugin?」。
+      // 普通对象的 x/y/w/h 是纯数字，本来也没有取整问题
+    })
     gsap.to(pill, {
-      ...box,
+      ...next,
       duration: durations.navSlide,
       ease: easings.snappy,
       overwrite: 'auto',
+      // GSAP 默认 autoRound: true，会把 px 值舍入到**整数**。
+      // 而胶囊高 75.6px —— 舍入后指示条会比按钮高出 0.4px，位置也会差 0.2px。
+      // 指示条必须与按钮像素级重合，所以关掉它
+      autoRound: false,
     })
   }
 
@@ -106,150 +169,20 @@ export function Sidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
-  // 菜单拉出：
-  // 外层高度 0 → 自然高度（页脚贴底，所以分隔线会跟着整体上抬），
-  // 内层同时做一次 16px 的向上滑入。两道配合才有「拉出来」的完整观感。
-  useEffect(() => {
-    const wrap = menuWrapRef.current
-    const menu = menuRef.current
-    if (!wrap || !menu) return
-
-    if (prefersReducedMotion()) {
-      gsap.set(wrap, menuOpen ? { height: 'auto' } : { height: 0 })
-      gsap.set(menu, menuOpen ? { y: 0, opacity: 1 } : { y: MENU_SLIDE, opacity: 0 })
-      return
-    }
-
-    const tweens = menuOpen
-      ? [
-          gsap.fromTo(
-            wrap,
-            { height: 0 },
-            { height: 'auto', duration: durations.moreReveal, ease: easings.soft },
-          ),
-          gsap.fromTo(
-            menu,
-            { y: MENU_SLIDE, opacity: 0 },
-            { y: 0, opacity: 1, duration: durations.moreReveal, ease: easings.soft },
-          ),
-        ]
-      : [
-          // 收起不再抢快：与展开同长同曲线（0.42s / power2.out）。
-          // 早先用 0.7 倍时长 + power3.out，起步极快，等于「啪」一下就没了，看不出过程。
-          gsap.to(menu, {
-            y: MENU_SLIDE * 0.6,
-            opacity: 0,
-            duration: durations.moreReveal,
-            ease: easings.soft,
-          }),
-          gsap.to(wrap, {
-            height: 0,
-            duration: durations.moreReveal,
-            ease: easings.soft,
-          }),
-        ]
-
-    return () => {
-      for (const tween of tweens) tween.kill()
-    }
-  }, [menuOpen])
-
-  // 图标形变：三点连成横线 → 转 90° → 展出箭头
-  useEffect(() => {
-    const stem = stemRef.current
-    const head = headRef.current
-    const dots = dotRefs.current.filter((dot): dot is SVGRectElement => dot !== null)
-    if (!stem || !head || dots.length !== 3) return
-
-    const target = menuOpen ? DOTS_OPEN : DOTS_CLOSED
-    const morphDots = () =>
-      dots.map((dot, index) => ({ dot, x: target.x[index], width: target.width }))
-
-    if (prefersReducedMotion()) {
-      for (const { dot, x, width } of morphDots()) {
-        gsap.set(dot, { attr: { x, width, rx: target.rx } })
-      }
-      gsap.set(stem, { rotation: menuOpen ? 90 : 0, svgOrigin: STEM_ORIGIN })
-      gsap.set(head, {
-        opacity: menuOpen ? 1 : 0,
-        scale: menuOpen ? 1 : 0.3,
-        svgOrigin: HEAD_ORIGIN,
-      })
-      return
-    }
-
-    // 与指示条、菜单拉出用同一条曲线，否则同一次点击里会看出两种「手感」
-    const timeline = gsap.timeline({ defaults: { ease: easings.snappy } })
-
-    if (menuOpen) {
-      timeline
-        // 1) 三个点连成一条线（圆角同步归零，否则转 90° 后看着是三个方块）
-        .to(dots, {
-          attr: {
-            x: (index: number) => DOTS_OPEN.x[index],
-            width: DOTS_OPEN.width,
-            rx: DOTS_OPEN.rx,
-          },
-          duration: durations.moreMorph,
-        })
-        // 2) 同时整体转 90°（横线转成竖线，充当箭头杆）
-        .to(stem, { rotation: 90, svgOrigin: STEM_ORIGIN, duration: durations.moreMorph + 0.04 }, 0.06)
-        // 3) 从顶点向外展出箭头两撇
-        .fromTo(
-          head,
-          { opacity: 0, scale: 0.3, svgOrigin: HEAD_ORIGIN },
-          { opacity: 1, scale: 1, duration: 0.28 },
-          0.3,
-        )
-    } else {
-      // 收起走反向，但更快（退出时用户已知结果）
-      timeline
-        .to(head, { opacity: 0, scale: 0.3, svgOrigin: HEAD_ORIGIN, duration: 0.16 })
-        .to(stem, { rotation: 0, svgOrigin: STEM_ORIGIN, duration: 0.24 }, 0.04)
-        .to(
-          dots,
-          {
-            attr: {
-              x: (index: number) => DOTS_CLOSED.x[index],
-              width: DOTS_CLOSED.width,
-              rx: DOTS_CLOSED.rx,
-            },
-            duration: 0.22,
-          },
-          0.1,
-        )
-    }
-
-    return () => {
-      timeline.kill()
-    }
-  }, [menuOpen])
-
-  // 弹出菜单：Esc 与点击外部关闭
-  useEffect(() => {
-    if (!menuOpen) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false)
-    }
-    const onPointerDown = (event: MouseEvent) => {
-      if (!footRef.current?.contains(event.target as Node)) setMenuOpen(false)
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    // 延后一帧再监听，避免触发本次展开的点击立刻把它关掉
-    const timer = window.setTimeout(() => document.addEventListener('mousedown', onPointerDown), 0)
-
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      document.removeEventListener('mousedown', onPointerDown)
-      window.clearTimeout(timer)
-    }
-  }, [menuOpen])
-
   return (
-    <aside className="glass sidebar">
-      <div className="sidebar__brand">{SITE.brand}</div>
+    <aside className="glass sidebar" ref={asideRef} style={iconVars}>
+      {/* 侧栏的「壳」（描边 + 内高光 + 内反光）。为什么不是面板自己的 box-shadow：
+          胶囊比面板大一圈，面板本体上画的框线会从胶囊**内部**穿过去。
+          所以壳单独一层，并用一个跟随胶囊的「洞」把胶囊盖住的区域挖掉。
+          洞的位置由 placePill 同步写在 --cut-* 上 */}
+      <span className="sidebar__edge" aria-hidden="true">
+        {/* 假边线被胶囊捏断的那 4 个「头」上的固定亮点。
+            放在壳**里面**是为了白捡一层裁剪：壳已经有一个跟随胶囊的洞，
+            胶囊盖住的部分自动被挖掉 —— 亮点正好在胶囊口收住。
+            不跟光标（光标那圈在壳的 ::after / ::before 上），只看 --cut-* */}
+        <span className="sidebar__edge-heads" />
+        <span className="sidebar__edge-heads-glow" />
+      </span>
 
       <nav className="sidebar__nav" aria-label="主导航" ref={navRef}>
         <span className="sidebar__pill" ref={pillRef} aria-hidden="true" />
@@ -259,96 +192,19 @@ export function Sidebar({
             type="button"
             className="sidebar__btn"
             aria-current={active === index}
+            /* 按钮只剩图标了，标签必须是可读的：屏幕阅读器读 aria-label，
+               鼠标用户悬停看 title */
+            aria-label={item.label}
+            title={item.label}
             ref={(element) => {
               buttonRefs.current[index] = element
             }}
             onClick={() => onSelect(index)}
           >
-            <span className="sidebar__dot" aria-hidden="true" />
-            {item.label}
+            <NavIcon paths={NAV_ICON_PATHS[item.id]} />
           </button>
         ))}
       </nav>
-
-      <div className="sidebar__foot" ref={footRef}>
-        <div className="sidebar__bar">
-          <span className="sidebar__identity" title={`主题色 ${accent}（随本地时间连续过渡）`}>
-            <span className="sidebar__swatch" style={{ background: accent }} aria-hidden="true" />
-            <span className="sidebar__who">
-              {themeLabel} · {user.nickname}
-            </span>
-          </span>
-
-          <button
-            type="button"
-            className="sidebar__more"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label={menuOpen ? '收起更多操作' : '更多操作'}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <svg
-              className="sidebar__more-icon"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              {/* 三个圆点：展开时连成一条线，再由父级整体转 90° 变成箭头杆 */}
-              <g ref={stemRef} className="sidebar__more-stem">
-                {[0, 1, 2].map((index) => (
-                  <rect
-                    key={index}
-                    ref={(element) => {
-                      dotRefs.current[index] = element
-                    }}
-                    className="sidebar__more-dot"
-                    x={DOTS_CLOSED.x[index]}
-                    y="10.3"
-                    width={DOTS_CLOSED.width}
-                    height="3.4"
-                    rx={DOTS_CLOSED.rx}
-                  />
-                ))}
-              </g>
-              {/* 箭头两撇：从顶点向外展开 */}
-              <path
-                ref={headRef}
-                className="sidebar__more-head"
-                d="M5.5 10 L12 3.5 L18.5 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-
-        {/* 高度由 GSAP 从 0 拉到自然高度；页脚贴底，因此分隔线会随之整体上抬.
-            菜单不加任何背景/边框，只展出按钮本身 */}
-        <div className="sidebar__menu-wrap" ref={menuWrapRef} inert={!menuOpen} aria-hidden={!menuOpen}>
-          <div className="sidebar__menu" role="menu" ref={menuRef}>
-            {user.role === 'admin' ? (
-              <a className="sidebar__menu-item" role="menuitem" href="/admin">
-                管理后台
-              </a>
-            ) : null}
-            <button
-              type="button"
-              className="sidebar__menu-item"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false)
-                onLogout()
-              }}
-            >
-              退出登录
-            </button>
-          </div>
-        </div>
-      </div>
     </aside>
   )
 }

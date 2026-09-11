@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../../components/Orbs'
 import { Sidebar, type SectionId } from './Sidebar'
-import { ContactSection, FeaturesSection, IntroSection } from './sections'
+import { ContactSection, FeaturesSection, IntroSection, MoreSection } from './sections'
 import { springStep, waveAssign } from '../../motion/math'
 import { durations, easings, omega } from '../../motion/tokens'
 import { useOverflowMode } from '../../motion/useOverflowMode'
@@ -10,9 +10,14 @@ import type { OrbVariant } from '../../motion/orbMotion'
 import type { User } from '../../api/client'
 
 const SECTIONS: { id: SectionId; label: string; orb: OrbVariant }[] = [
-  { id: 'intro', label: '简介', orb: 'drift' },
+  // label 现在同时是侧栏图标按钮的 aria-label / title（按钮只剩图标了），
+  // 以及分页器的「前往 XX」。所以它得是一个**动作**的说法，不只是分区名
+  { id: 'intro', label: '首页', orb: 'drift' },
   { id: 'features', label: '功能', orb: 'pulse' },
   { id: 'contact', label: '联系', orb: 'wave' },
+  // 「更多」是第四个**页面**（站名 / 账户 / 后台 / 退出），不是一个弹出菜单。
+  // 光斑复用 drift：这一页全是账户信息，背景不该抢戏
+  { id: 'more', label: '更多', orb: 'drift' },
 ]
 
 /** 触控板细碎抖动过滤（不是时间锁，只用来判定"这一次算不算一次意图"） */
@@ -282,7 +287,8 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
 
     // 流入方向跟随**翻页方向**：新 section 从哪边进来，元素就从哪边流入。
     // 方向固定时，反方向那次元素是「逆着容器」走的，读起来就是拉伸。
-    const direction = Math.sign(target - prevTargetRef.current)
+    const previous = prevTargetRef.current
+    const direction = Math.sign(target - previous)
     prevTargetRef.current = target
     const dir = direction === 0 ? 1 : direction
 
@@ -292,6 +298,27 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
 
     // 刻意**不用** elastic：过冲会让相邻元素来回挤压，看着像「晃」而不是「流」。
     const flow = easings.soft
+    const horizontal = axisRef.current === 'x'
+
+    // 退场：旧页面朝**翻页去向**流走，与新页面的来向正好对称。
+    // 少了这一步，切走的那一页只是被容器拖走，自己没有任何动作。
+    if (direction !== 0) {
+      const leaving = trackRef.current?.children[previous]?.querySelectorAll<HTMLElement>(
+        '[data-reveal]',
+      )
+      if (leaving?.length) {
+        const outShift = (index: number) =>
+          -direction * REVEAL_RISE * waveAssign(index, REVEAL_COLUMNS).amplitude
+        gsap.to(leaving, {
+          opacity: 0,
+          ...(horizontal ? { x: outShift } : { y: outShift }),
+          duration,
+          ease: flow,
+          stagger,
+          overwrite: 'auto',
+        })
+      }
+    }
 
     // 缩放：从略小的状态「胀」回原位
     gsap.fromTo(
@@ -303,14 +330,23 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
     // 涌入：从翻页方向那一侧流入。波包幅度随距离递减，
     // 所以靠后的元素起始更近 —— **起始间距比最终间距更紧**（压缩）；
     // 而错开带来的先后差，就是这个效果里「弹簧」的来源。
-    gsap.fromTo(
-      items,
-      {
-        opacity: 0,
-        y: (index: number) => dir * REVEAL_RISE * k * waveAssign(index, REVEAL_COLUMNS).amplitude,
-      },
-      { opacity: 1, y: 0, duration, ease: flow, stagger, overwrite: 'auto' },
-    )
+    //
+    // 手机模式（横向轴）整屏是左右切换的，元素就得**左右**流入才对得上；
+    // 两个轴都沿用同一个 dir，所以始终是「新的一屏从哪边进来，元素就从哪边进」。
+    const shift = (index: number) =>
+      dir * REVEAL_RISE * k * waveAssign(index, REVEAL_COLUMNS).amplitude
+    const from: gsap.TweenVars = horizontal ? { opacity: 0, x: shift } : { opacity: 0, y: shift }
+
+    gsap.fromTo(items, from, {
+      opacity: 1,
+      // 两个轴都归零：否则从纵向模式切到横向时会残留上一个轴的位移
+      x: 0,
+      y: 0,
+      duration,
+      ease: flow,
+      stagger,
+      overwrite: 'auto',
+    })
   }, [target])
 
   return (
@@ -321,15 +357,11 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
         items={SECTIONS.map((section) => ({ id: section.id, label: section.label }))}
         active={target}
         onSelect={goTo}
-        user={user}
-        themeLabel={themeLabel}
-        accent={accent}
-        onLogout={onLogout}
       />
 
       <div className="viewport" ref={viewportRef}>
         <div className="viewport__track" ref={trackRef} data-axis={axis}>
-          <section className="section" id="intro" aria-label="简介" inert={target !== 0}>
+          <section className="section" id="intro" aria-label="首页" inert={target !== 0}>
             <div className="section__body">
               <IntroSection />
             </div>
@@ -342,6 +374,16 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
           <section className="section" id="contact" aria-label="联系" inert={target !== 2}>
             <div className="section__body">
               <ContactSection />
+            </div>
+          </section>
+          <section className="section" id="more" aria-label="更多" inert={target !== 3}>
+            <div className="section__body">
+              <MoreSection
+                user={user}
+                themeLabel={themeLabel}
+                accent={accent}
+                onLogout={onLogout}
+              />
             </div>
           </section>
         </div>
