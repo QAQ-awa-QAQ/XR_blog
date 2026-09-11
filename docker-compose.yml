@@ -14,8 +14,10 @@ services:
       DB_PATH: /data/blog.db
       REDIS_ADDR: redis:6379
       ADMIN_ACCOUNT: ${ADMIN_ACCOUNT:-admin}
-      # 留空则冷启动时随机生成密码并打印到容器日志（docker compose logs app）
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # ⚠️ 默认值是本地模拟用的弱口令，**对外部署必须用环境变量覆盖**：
+      #     ADMIN_PASSWORD='强密码' docker compose up -d
+      # 另外它只在账号不存在时生效：已有 admin 时改这里不会换密码。
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123}
       # 明文 HTTP 下必须为 false；一旦挂上 HTTPS 域名就改成 true
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUSTED_PROXIES: 127.0.0.1,::1

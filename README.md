@@ -11,10 +11,13 @@
 **界面**
 
 - 欢迎页 GSAP 动画：水滴玻璃浮出 → 文字逐字凝聚 → 「登录 →」浮现，可点击跳过
-- 主题色随**本地时间**在 8 个时段（凌晨/清晨/上午/中午/下午/傍晚/晚上/午夜）之间按分钟线性插值，夜间自动转深色，全程无跳变
+- 主题色随**本地时间**在 8 个时段之间按分钟连续插值，夜间自动转深色；文字色是**离散两档**（按背景亮度切换），保证任何时刻对比度达标
 - Liquid Glass 视觉：`backdrop-filter` 毛玻璃、1px 高光边框、多层光斑背景
-- 整屏切换：滚轮 / 触控板 / 方向键 / PageUp-Down / Home-End / 触屏滑动，侧栏三个入口（简介 · 功能 · 联系），每页背景动画各不相同
-- 响应式（桌面优先，移动端可用），尊重 `prefers-reduced-motion`，键盘焦点可见
+- 主页面**双轴向**：内容装得下就走纵向整屏切换；装不下自动转手机逻辑（横向切换 + 正文纵向滚动）
+- 切换由**临界阻尼弹簧**逐帧追赶：连滚会合并成最新目标，途中反向会保留速度改向；收尾有亚像素吸附，不会「停不下来」
+- 卡片入场：波包式错开 + 长距离位移，流入方向**跟随翻页方向**；登录后首次进入会减弱幅度
+- 侧栏：选中态是**滑动指示条**；页脚「更多」把分隔线及以下内容整体上抬、拉出菜单，图标同时变形为 ↑
+- 滚动条隐藏（不占位、不影响滚动），尊重 `prefers-reduced-motion`，键盘焦点可见
 
 **账号与权限**
 
@@ -44,7 +47,23 @@
 | 后端 | Go · Gin · GORM · SQLite（纯 Go driver，免 CGO） |
 | 缓存/会话 | Redis 7（AOF 持久化） |
 | 部署 | 单容器内 Nginx + Go 双进程，多阶段构建 |
-| 测试 | Go `testing` + miniredis（无需真实 Redis） |
+| 测试 | 后端 Go `testing` + miniredis（24 项）；前端 `node --test` 自检 21 项 |
+
+---
+
+## 运动与视觉设计
+
+动画参数全部集中在 `frontend/src/motion/tokens.ts`，纯函数在 `motion/math.ts`
+（不依赖 DOM，可以直接被 `node --test` 导入断言）。前端自检用 `npm run check`，
+已接在 `prebuild` 上，所以 `npm run build` 会先跑完 21 项断言。
+
+关键决策与踩过的坑都记在 `DESIGN-LOG.md`，例如：
+
+- 短程位移不能用 smootherstep：它两端速度归零，10% 时长只走 0.9%，按钮滑动会「先卡住再猛冲」
+- 入场的**波包错开不能去掉** —— 它是「层次感」与弹簧感的来源，删了就退化成整块平移
+- 轴判定不能看 `scrollHeight`：滚动区域会把 `transform` 造成的溢出算进去，入场位移会把轴误判成横向
+- 入场目标元素**不能挂 CSS `transform` 过渡**：过渡会把 GSAP 写入的起始值拦下来
+- 文字色必须离散两档：插值会让某个时刻的前景/背景对比度归零
 
 ---
 
@@ -75,6 +94,9 @@ ADMIN_ACCOUNT=admin ADMIN_PASSWORD='your-strong-password' docker compose up -d -
 ```
 
 > `ADMIN_PASSWORD` 仅在账号**不存在**时生效，改它不会更新已有密码。
+>
+> ⚠️ `docker-compose.yml` 里的默认口令 `123` 是**本地模拟用的弱口令**，且会随仓库公开。
+> 对外部署前务必用环境变量覆盖：`ADMIN_PASSWORD='强密码' docker compose up -d`。
 
 ### 本地开发
 
@@ -89,6 +111,25 @@ go run ./cmd/server          # 监听 127.0.0.1:8081
 cd frontend
 npm install
 npm run dev                  # 5173，/api 自动代理到 8081
+```
+
+---
+
+## 目录结构
+
+```
+backend/           Go 服务（cmd/server、internal/{handler,middleware,service,store}、tests）
+frontend/
+  src/motion/      运动数学与参数（纯函数，可被 node --test 直接断言）
+  src/theme/       按本地时间连续变色的主题
+  src/content/     站点文案（当前仍是占位内容）
+  src/pages/main/  主页面：双轴向切换、侧栏、三个板块
+  scripts/         自检脚本 check-{content,motion,theme}.mjs
+  reference/       主题对照页（人工核对色板用）
+deploy/            Nginx 配置与容器入口脚本
+design.md          需求与设计文档
+plan.md            实施步骤
+DESIGN-LOG.md      设计决策与踩坑记录
 ```
 
 ---
@@ -157,11 +198,36 @@ go test ./tests/... -count=1
 
 `backend/tests/` 覆盖：冷却与封禁阈值、冷却期仍计数、再犯永久、限时封禁到期保留触犯次数、argon2id 哈希与校验、邀请码必填/单次/过期、重复账号、会话生命周期、冷启动管理员只建一次，以及走完整路由与中间件链的 HTTP 集成测试（错误码、管理员角色 + CSRF、闸门 `X-Block` 协议）。
 
-前端构建校验：
+前端有一组**纯函数断言**（21 项），把动效与配色里靠肉眼难查的性质固定下来：
 
 ```bash
-cd frontend && npm run build     # tsc --noEmit + vite build
+cd frontend
+npm run check          # 内容 / 运动数学 / 时段主题；已接入 prebuild，构建前自动执行
+npm run check:theme    # 单独跑某一组
 ```
+
+- `check-content`：文案结构、长度上限、链接与邮箱格式、占位标记
+- `check-motion`：缓动两端速度为零、临界阻尼不超调且可被打断接续、波包幅度有界、
+  呼吸周期互质（8s/13s/26s/40s 都不是周期）、光斑位移与缩放不越界
+- `check-theme`：锚点精确命中、逐分钟连续、夜间明显更暗、**任何时刻文字对比度都足够**
+
+前端类型检查与构建：
+
+```bash
+cd frontend && npm run build     # tsc --noEmit + vite build（build 前自动跑上面的断言）
+```
+
+### 开发用对照页
+
+配色与动效的参数都在 `frontend/reference/` 下有对应的**实时对照页**（只在开发服务器存在，不进入生产构建）：
+
+```bash
+cd frontend && npm run dev
+then open  http://localhost:5173/reference/palette-review.html
+```
+
+拖动时间轴即可查看任意时刻的插值结果，并直接读出「相邻分钟最大通道差」「文字色一天切换几次」
+「最差对比度出现在哪一刻」——不用改代码再刷新。
 
 ---
 
@@ -182,29 +248,43 @@ cd frontend && npm run build     # tsc --noEmit + vite build
 │  │  ├─ handler/            # auth / admin / internal / page
 │  │  └─ router/             # 路由唯一注册点
 │  └─ tests/                 # 测试程序
-├─ frontend/src/
-│  ├─ theme/                 # 时段取色（核心视觉逻辑）
-│  ├─ pages/                 # Welcome / Auth / Admin / main
-│  ├─ components/            # Orbs / Field / ErrorBanner
-│  └─ api/client.ts
+├─ frontend/
+│  ├─ src/
+│  │  ├─ theme/                 # 时段取色（palette + useTimeTheme）
+│  │  ├─ motion/                # 运动数学：缓动 / 弹簧 / 波包 / 光斑
+│  │  ├─ content/site.ts        # 全站文案（与组件分离）
+│  │  ├─ pages/                 # Welcome / Auth / Admin / main
+│  │  ├─ components/            # Orbs / Field / ErrorBanner
+│  │  └─ api/client.ts
+│  ├─ scripts/                  # 三组校验脚本（node --test）
+│  └─ reference/                # 开发用对照页（不进生产构建）
 ├─ deploy/
-│  ├─ nginx.conf             # 闸门 + 静态托管
-│  └─ entrypoint.sh          # 单容器双进程
-├─ design-system/            # 由 ui-ux-pro-max 生成的设计系统
-├─ design.md                 # 需求（唯一需求源）
-└─ plan.md                   # 实施方案与踩坑记录
+│  ├─ nginx.conf                # 闸门 + 静态托管
+│  └─ entrypoint.sh             # 单容器双进程
+├─ design-system/               # 由 ui-ux-pro-max 生成的设计系统
+├─ design.md                    # 需求（唯一需求源）
+├─ DESIGN-LOG.md                # 决策日志：数值依据与**被否决的方案**
+└─ plan.md                      # 实施方案与踩坑记录
 ```
 
 ---
 
 ## 实现要点
 
-几个容易踩坑、已在 `plan.md` 中记录的设计决定：
+几个容易踩坑、已在 `plan.md` 与 `DESIGN-LOG.md` 中记录的设计决定：
 
 - **Nginx 闸门返回 403 + `X-Block: banned|cooldown`**。`auth_request` 只把 401/403 当作拒绝，返回 429 会被当成 500，因此用响应头区分两种拦截原因，由 `@blocked` 决定跳向哪一页。
 - **登录/注册两个接口必须豁免闸门**。冷却期内它们仍要被 Go 统计到，否则 20 次阈值永远凑不满，「再犯永久封禁」会变成死规则。
 - **不要在 Nginx 上加 `limit_req`**。Nginx 若先返回 503，Go 的滑动窗口同样数不到 20 次。阈值判定只放在 Go 里。
 - **`absolute_redirect off`**。容器内监听 80、对外映射到其他端口时，默认的绝对地址会丢掉端口号。
+- **文字色不参与插值**。背景由浅变深、文字由深变浅，两者同时连续插值**必然**在中途亮度相等，
+  那一瞬间对比度趋近于 0（实测约 10，文字基本不可读）。改为按背景亮度**离散切换两档**，
+  阈值放在亮度中点，最差时刻仍有 110 以上的亮度差。
+- **整屏切换用临界阻尼弹簧，不用「事件 + 时间锁」**。滚轮只更新目标值，画面逐帧追过去，
+  所以连续快滚会被合并成最新目标（实测间隔 150ms 连滚三次可直达第三页），
+  运动途中反向也能保留速度改向。
+- **主页面交互轴按内容自动切换**。装得下时纵向整屏切换（滚轮 / 上下键 / 上下滑，正文不滚动）；
+  装不下时转为横向（左右滑 / 左右键 / 横向滚轮），正文纵向自己滚。两种模式下都不会出现页面滚动条。
 
 ---
 
