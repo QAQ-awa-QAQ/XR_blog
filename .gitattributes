@@ -1,0 +1,15 @@
+# 仓库内统一使用 LF。
+# 关键原因：deploy/entrypoint.sh 会被拷进 Linux 容器执行，
+# 若在 Windows 检出时被转成 CRLF，容器里会直接报 "not found"/语法错误。
+* text=auto eol=lf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.db binary

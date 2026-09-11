@@ -1,0 +1,10 @@
+**/node_modules
+frontend/dist
+backend/data
+data
+.git
+.gitignore
+*.md
+design-system
+ui-ux-pro-max
+.vscode
