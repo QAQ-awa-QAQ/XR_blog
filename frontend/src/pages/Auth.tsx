@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../components/Orbs'
 import { ErrorBanner, Field } from '../components/ui'
+import { durations, easings } from '../motion/tokens'
 import { ApiError, api, type User } from '../api/client'
 
 type Mode = 'login' | 'register'
@@ -26,7 +27,13 @@ export function Auth({ onAuthenticated, onBack }: Props) {
   useEffect(() => {
     const ctx = gsap.context(() => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-      gsap.from(cardRef.current, { opacity: 0, y: 24, scale: 0.98, duration: 0.6, ease: 'expo.out' })
+      gsap.from(cardRef.current, {
+        opacity: 0,
+        y: 24,
+        scale: 0.98,
+        duration: durations.panelEnter,
+        ease: easings.smooth,
+      })
     }, cardRef)
     return () => ctx.revert()
   }, [])

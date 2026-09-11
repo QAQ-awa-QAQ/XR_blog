@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../components/Orbs'
+import { SITE } from '../content/site'
+import { durations, easings } from '../motion/tokens'
 
-const TITLE = '欢迎访问XR个人站'
+const TITLE = SITE.welcome.title
 
 type Props = {
   /** 点击「登录 →」后由外层校验登录态 */
@@ -11,8 +13,11 @@ type Props = {
 }
 
 /**
- * 欢迎页：GSAP 时间轴按「水滴玻璃浮出 → 文字逐字凝聚 → 登录入口浮现」的顺序入场。
- * 点击任意处可跳过动画（尊重 prefers-reduced-motion 时直接落到终态）。
+ * 欢迎页：水滴玻璃浮出 → 文字逐字凝聚 → 登录入口浮现。
+ *
+ * 缓动选择：光斑用 elastic（"水滴"该有的回弹），文字与按钮用 smootherstep
+ * （慢出慢停、两端无速度突变）。全时间轴参数集中在 motion/tokens.ts。
+ * 点击任意处可跳过；prefers-reduced-motion 下直接落到终态。
  */
 export function Welcome({ onEnter, busy }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -27,29 +32,40 @@ export function Welcome({ onEnter, busy }: Props) {
       const chars = gsap.utils.toArray<HTMLElement>('.welcome__char')
 
       if (reduceMotion) {
-        gsap.set([beamRef.current, ctaRef.current, ...chars], { opacity: 1, y: 0, scale: 1, filter: 'none' })
+        gsap.set([beamRef.current, ctaRef.current, ...chars], {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          filter: 'none',
+        })
         return
       }
 
-      const tl = gsap.timeline({ defaults: { ease: 'expo.out' } })
+      const tl = gsap.timeline({ defaults: { ease: easings.smooth } })
       timelineRef.current = tl
 
       tl.from(beamRef.current, {
         scale: 0.55,
         opacity: 0,
-        duration: 1,
+        duration: durations.welcomeBeam,
         ease: 'elastic.out(1, 0.62)',
       })
         .from(
           chars,
-          { opacity: 0, y: 20, filter: 'blur(10px)', duration: 0.65, stagger: 0.035 },
+          {
+            opacity: 0,
+            y: 20,
+            filter: 'blur(10px)',
+            duration: durations.welcomeChar,
+            stagger: durations.welcomeCharStagger,
+          },
           '-=0.35',
         )
         .from('.welcome__subtitle', { opacity: 0, y: 10, duration: 0.5 }, '-=0.3')
         .fromTo(
           ctaRef.current,
           { opacity: 0, y: 14 },
-          { opacity: 1, y: 0, duration: 0.55 },
+          { opacity: 1, y: 0, duration: durations.welcomeCta },
           '-=0.15',
         )
     }, rootRef)
@@ -78,7 +94,7 @@ export function Welcome({ onEnter, busy }: Props) {
           ))}
         </h1>
 
-        <p className="welcome__subtitle">一个关于我、我的作品与联系方式的地方</p>
+        <p className="welcome__subtitle">{SITE.welcome.subtitle}</p>
 
         <button
           type="button"

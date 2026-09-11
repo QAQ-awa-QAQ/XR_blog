@@ -1,82 +1,138 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../../components/Orbs'
-import { Sidebar } from './Sidebar'
+import { Sidebar, type SectionId } from './Sidebar'
 import { ContactSection, FeaturesSection, IntroSection } from './sections'
+import { springStep, waveAssign } from '../../motion/math'
+import { durations, easings, omega } from '../../motion/tokens'
+import { useOverflowMode } from '../../motion/useOverflowMode'
+import type { OrbVariant } from '../../motion/orbMotion'
 import type { User } from '../../api/client'
 
-const SECTIONS = [
+const SECTIONS: { id: SectionId; label: string; orb: OrbVariant }[] = [
   { id: 'intro', label: '简介', orb: 'drift' },
   { id: 'features', label: '功能', orb: 'pulse' },
   { id: 'contact', label: '联系', orb: 'wave' },
-] as const
+]
+
+/** 触控板细碎抖动过滤（不是时间锁，只用来判定"这一次算不算一次意图"） */
+const GESTURE_THRESHOLD = 24
+/** 触屏滑动的最小距离与主方向倍数 */
+const SWIPE_MIN = 60
+const SWIPE_RATIO = 1.2
+
+/** 弹簧的落位阈值（单位：屏）。
+    临界阻尼是指数收敛，最后零点几个百分点会拖上一大段，看着像「停不下来」；
+    剩余不足 0.05% 屏（任何屏上都不到一个像素）就直接落位。 */
+const SNAP_EPSILON = 0.0005
+
+/** 登录后**首次**进入主页时，弹簧只用这么多幅度（正文之间互切时给满） */
+const FIRST_REVEAL_SCALE = 0.4
+
+/** 元素涌入的起始距离（px）。够远才读得出流动感 */
+const REVEAL_RISE = 640
+
+/** 波包式入场按 3 列估算距离（用于错开与幅度） */
+const REVEAL_COLUMNS = 3
 
 type Props = {
   user: User
   themeLabel: string
+  accent: string
   onLogout: () => void
 }
 
-const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
 /**
  * 主页面：整屏切换。
- * 滚轮（含触控板）、方向键、PageUp/Down、Home/End、触屏滑动都能切页；
- * 若当前页内容超出视口，则先把内容滚到底再翻页。
+ *
+ * 两条轴，按内容装不装得下自动选择：
+ *   装得下 → 纵向切换（滚轮 / 上下键 / 上下滑），正文不滚动 —— 设计稿的默认形态
+ *   装不下 → 手机逻辑：横向切换（左右滑 / 左右键 / 横向滚动），正文纵向自己滚
+ *
+ * 切换本身不靠"事件 + 时间锁"：滚轮只更新目标值，画面由临界阻尼弹簧逐帧追过去，
+ * 所以连续快滚会合并成最新目标，运动途中反向也能保留速度改向。
  */
-export function MainShell({ user, themeLabel, onLogout }: Props) {
-  const [index, setIndex] = useState(0)
-  const indexRef = useRef(0)
+export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
+  const [target, setTarget] = useState(0)
+
+  const targetRef = useRef(0)
+  const prevTargetRef = useRef(0)
+  const firstRevealRef = useRef(true)
+  const axisRef = useRef<'y' | 'x'>('y')
+  const positionRef = useRef(0)
+  const velocityRef = useRef(0)
+  const accumulatorRef = useRef(0)
   const trackRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
-  const lockedRef = useRef(false)
-  const accRef = useRef(0)
+
+  // 内容装不下时改走横向切换；两种模式下 section 几何一致，判定不会来回抖动
+  const overflow = useOverflowMode(viewportRef, [target])
+  const axis: 'y' | 'x' = overflow ? 'x' : 'y'
+  axisRef.current = axis
 
   const goTo = useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(SECTIONS.length - 1, next))
-    if (clamped === indexRef.current) return
-    indexRef.current = clamped
-    setIndex(clamped)
+    if (clamped === targetRef.current) return
+    targetRef.current = clamped
+    setTarget(clamped)
   }, [])
 
-  // 页面切换：位移 + 当前页元素错落入场
+  const step = useCallback((delta: number) => goTo(targetRef.current + delta), [goTo])
+
+  // 唯一的时间源：临界阻尼弹簧
   useEffect(() => {
     const track = trackRef.current
     if (!track) return
-    const reduce = prefersReducedMotion()
 
-    gsap.to(track, {
-      yPercent: -index * 100,
-      duration: reduce ? 0 : 0.85,
-      ease: 'expo.inOut',
-      overwrite: true,
-    })
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let raf = 0
+    let last = performance.now()
 
-    const current = track.children[index] as HTMLElement | undefined
-    const items = current?.querySelectorAll('[data-reveal]')
-    if (items?.length) {
-      gsap.fromTo(
-        items,
-        { opacity: 0, y: 18 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: reduce ? 0 : 0.5,
-          stagger: 0.06,
-          ease: 'power2.out',
-          overwrite: true,
-        },
-      )
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000)
+      last = now
+
+      if (reduce) {
+        positionRef.current = targetRef.current
+        velocityRef.current = 0
+      } else {
+        const [position, velocity] = springStep(
+          positionRef.current,
+          velocityRef.current,
+          targetRef.current,
+          omega.page,
+          dt,
+        )
+        // 已经只剩亚像素级差距时直接吸附，否则会在目标附近以极小速度挪很久
+        if (Math.abs(position - targetRef.current) < SNAP_EPSILON) {
+          positionRef.current = targetRef.current
+          velocityRef.current = 0
+        } else {
+          positionRef.current = position
+          velocityRef.current = velocity
+        }
+      }
+
+      const percent = (-positionRef.current * 100).toFixed(4)
+      track.style.transform =
+        axisRef.current === 'x'
+          ? `translate3d(${percent}%, 0, 0)`
+          : `translate3d(0, ${percent}%, 0)`
+      raf = requestAnimationFrame(tick)
     }
-  }, [index])
+
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   // 滚轮 / 触控板
   useEffect(() => {
-    const el = viewportRef.current
-    if (!el) return
+    const viewport = viewportRef.current
+    if (!viewport) return
 
+    // 正文可否继续纵向滚动（横向模式下由浏览器处理，这里只用于纵向模式的让位判断）
     const canInnerScroll = (deltaY: number) => {
-      const section = el.querySelectorAll<HTMLElement>('.section')[indexRef.current]
+      const section = viewport.querySelectorAll<HTMLElement>('.section')[targetRef.current]
       if (!section) return false
       if (section.scrollHeight - section.clientHeight <= 4) return false
       return deltaY < 0
@@ -85,40 +141,76 @@ export function MainShell({ user, themeLabel, onLogout }: Props) {
     }
 
     const onWheel = (event: WheelEvent) => {
+      // 横向模式：纵向手势交给正文滚动，只有横向手势才切页
+      if (axisRef.current === 'x') {
+        const horizontal = event.shiftKey ? event.deltaY : event.deltaX
+        const vertical = event.shiftKey ? 0 : event.deltaY
+        if (Math.abs(horizontal) <= Math.abs(vertical)) return
+
+        event.preventDefault()
+        accumulatorRef.current += horizontal
+        if (Math.abs(accumulatorRef.current) < GESTURE_THRESHOLD) return
+
+        const direction = accumulatorRef.current > 0 ? 1 : -1
+        accumulatorRef.current = 0
+        step(direction)
+        return
+      }
+
+      // 纵向模式：正文先滚完，再翻页
       if (canInnerScroll(event.deltaY)) return
       event.preventDefault()
-      if (lockedRef.current) return
 
-      accRef.current += event.deltaY
-      if (Math.abs(accRef.current) < 30) return
+      accumulatorRef.current += event.deltaY
+      if (Math.abs(accumulatorRef.current) < GESTURE_THRESHOLD) return
 
-      const direction = accRef.current > 0 ? 1 : -1
-      accRef.current = 0
-      lockedRef.current = true
-      goTo(indexRef.current + direction)
-      window.setTimeout(() => {
-        lockedRef.current = false
-      }, 700)
+      const direction = accumulatorRef.current > 0 ? 1 : -1
+      accumulatorRef.current = 0
+      step(direction)
     }
 
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [goTo])
+    viewport.addEventListener('wheel', onWheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', onWheel)
+  }, [step])
 
   // 键盘与触屏
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (axisRef.current === 'x') {
+        switch (event.key) {
+          case 'ArrowRight':
+            event.preventDefault()
+            step(1)
+            return
+          case 'ArrowLeft':
+            event.preventDefault()
+            step(-1)
+            return
+          case 'Home':
+            event.preventDefault()
+            goTo(0)
+            return
+          case 'End':
+            event.preventDefault()
+            goTo(SECTIONS.length - 1)
+            return
+          default:
+            // 上下键 / PageUp / PageDown / 空格：交给正文滚动
+            return
+        }
+      }
+
       switch (event.key) {
         case 'ArrowDown':
         case 'PageDown':
         case ' ':
           event.preventDefault()
-          goTo(indexRef.current + 1)
+          step(1)
           break
         case 'ArrowUp':
         case 'PageUp':
           event.preventDefault()
-          goTo(indexRef.current - 1)
+          step(-1)
           break
         case 'Home':
           event.preventDefault()
@@ -133,20 +225,33 @@ export function MainShell({ user, themeLabel, onLogout }: Props) {
       }
     }
 
+    let startX = 0
     let startY = 0
     const onTouchStart = (event: TouchEvent) => {
+      startX = event.touches[0]?.clientX ?? 0
       startY = event.touches[0]?.clientY ?? 0
     }
     const onTouchEnd = (event: TouchEvent) => {
+      const endX = event.changedTouches[0]?.clientX ?? startX
       const endY = event.changedTouches[0]?.clientY ?? startY
-      const delta = startY - endY
-      if (Math.abs(delta) < 60) return
-      const section = viewportRef.current?.querySelectorAll<HTMLElement>('.section')[indexRef.current]
+      const dx = startX - endX
+      const dy = startY - endY
+
+      // 横向模式：横向滑动切页，纵向滑动交给正文
+      if (axisRef.current === 'x') {
+        if (Math.abs(dx) < SWIPE_MIN) return
+        if (Math.abs(dx) <= Math.abs(dy) * SWIPE_RATIO) return
+        step(dx > 0 ? 1 : -1)
+        return
+      }
+
+      if (Math.abs(dy) < SWIPE_MIN) return
+      const section = viewportRef.current?.querySelectorAll<HTMLElement>('.section')[targetRef.current]
       if (section && section.scrollHeight - section.clientHeight > 4) {
         const atBottom = section.scrollTop + section.clientHeight >= section.scrollHeight - 1
-        if (delta > 0 && !atBottom) return
+        if (dy > 0 && !atBottom) return
       }
-      goTo(indexRef.current + (delta > 0 ? 1 : -1))
+      step(dy > 0 ? 1 : -1)
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -157,48 +262,103 @@ export function MainShell({ user, themeLabel, onLogout }: Props) {
       window.removeEventListener('touchstart', onTouchStart)
       window.removeEventListener('touchend', onTouchEnd)
     }
-  }, [goTo])
+  }, [goTo, step])
 
-  const current = SECTIONS[index]
+  // 目标页的卡片入场：波包式，延迟随到波源的距离增长
+  useEffect(() => {
+    const section = trackRef.current?.children[target] as HTMLElement | undefined
+    if (!section) return
+
+    const items = Array.from(section.querySelectorAll<HTMLElement>('[data-reveal]'))
+    if (items.length === 0) return
+
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const duration = reduce ? 0 : durations.cardReveal
+    // 首次进入（登录 → 简介）只用四成幅度：那一刻整页刚从登录页换过来，
+    // 足幅度的涌入叠在「换了页面」这件事上会显得特别猛。站内互切时才给满。
+    const k = firstRevealRef.current ? FIRST_REVEAL_SCALE : 1
+    firstRevealRef.current = false
+
+    // 流入方向跟随**翻页方向**：新 section 从哪边进来，元素就从哪边流入。
+    // 方向固定时，反方向那次元素是「逆着容器」走的，读起来就是拉伸。
+    const direction = Math.sign(target - prevTargetRef.current)
+    prevTargetRef.current = target
+    const dir = direction === 0 ? 1 : direction
+
+    // 波包错开是「层次感」的来源，不要去掉：所有元素同时涌入会退化成整块平移，
+    // 既没有彼此被推着走的感觉，也看不出幅度差异。
+    const stagger = (index: number) => waveAssign(index, REVEAL_COLUMNS).delay
+
+    // 刻意**不用** elastic：过冲会让相邻元素来回挤压，看着像「晃」而不是「流」。
+    const flow = easings.soft
+
+    // 缩放：从略小的状态「胀」回原位
+    gsap.fromTo(
+      items,
+      { scale: 1 - 0.07 * k },
+      { scale: 1, duration, ease: flow, stagger, overwrite: 'auto' },
+    )
+
+    // 涌入：从翻页方向那一侧流入。波包幅度随距离递减，
+    // 所以靠后的元素起始更近 —— **起始间距比最终间距更紧**（压缩）；
+    // 而错开带来的先后差，就是这个效果里「弹簧」的来源。
+    gsap.fromTo(
+      items,
+      {
+        opacity: 0,
+        y: (index: number) => dir * REVEAL_RISE * k * waveAssign(index, REVEAL_COLUMNS).amplitude,
+      },
+      { opacity: 1, y: 0, duration, ease: flow, stagger, overwrite: 'auto' },
+    )
+  }, [target])
 
   return (
     <div className="shell">
-      <Orbs variant={current.orb} />
+      <Orbs variant={SECTIONS[target].orb} />
+
       <Sidebar
-        items={SECTIONS.map((s) => ({ id: s.id, label: s.label }))}
-        active={index}
+        items={SECTIONS.map((section) => ({ id: section.id, label: section.label }))}
+        active={target}
         onSelect={goTo}
         user={user}
         themeLabel={themeLabel}
+        accent={accent}
         onLogout={onLogout}
       />
 
       <div className="viewport" ref={viewportRef}>
-        <div className="viewport__track" ref={trackRef}>
-          <section className="section" id="intro" aria-label="简介" inert={index !== 0}>
-            <IntroSection />
+        <div className="viewport__track" ref={trackRef} data-axis={axis}>
+          <section className="section" id="intro" aria-label="简介" inert={target !== 0}>
+            <div className="section__body">
+              <IntroSection />
+            </div>
           </section>
-          <section className="section" id="features" aria-label="功能" inert={index !== 1}>
-            <FeaturesSection />
+          <section className="section" id="features" aria-label="功能" inert={target !== 1}>
+            <div className="section__body">
+              <FeaturesSection />
+            </div>
           </section>
-          <section className="section" id="contact" aria-label="联系" inert={index !== 2}>
-            <ContactSection />
+          <section className="section" id="contact" aria-label="联系" inert={target !== 2}>
+            <div className="section__body">
+              <ContactSection />
+            </div>
           </section>
         </div>
 
         <div className="pager">
           <span>
-            {String(index + 1).padStart(2, '0')} / {String(SECTIONS.length).padStart(2, '0')}
+            {String(target + 1).padStart(2, '0')} / {String(SECTIONS.length).padStart(2, '0')}
           </span>
           <div className="pager__dots">
-            {SECTIONS.map((section, i) => (
+            {SECTIONS.map((section, index) => (
               <button
                 key={section.id}
                 type="button"
                 className="pager__dot"
-                aria-current={i === index}
+                aria-current={index === target}
                 aria-label={`前往${section.label}`}
-                onClick={() => goTo(i)}
+                onClick={() => goTo(index)}
               />
             ))}
           </div>

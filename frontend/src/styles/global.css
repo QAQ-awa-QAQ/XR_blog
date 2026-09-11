@@ -55,10 +55,11 @@ body {
   line-height: 1.5;
   color: var(--fg);
   background: linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 100%);
-  /* 长过渡：每分钟重新取色时视觉上仍是连续渐变，不会出现跳变 */
+  /* 背景色长过渡：每分钟重新取色时视觉上仍是连续渐变，不会出现跳变。
+     文字色则必须短过渡 —— 它是按背景亮度离散切换的，拖长会经过中灰而与背景糊在一起。 */
   transition:
     background-color 4s linear,
-    color 4s linear;
+    color 200ms linear;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -128,58 +129,9 @@ button {
   opacity: 0.42;
 }
 
-/* 简介页：缓慢漂浮 */
-.orb-field--drift .orb--a {
-  animation: drift-a 26s ease-in-out infinite;
-}
-.orb-field--drift .orb--b {
-  animation: drift-b 32s ease-in-out infinite;
-}
-.orb-field--drift .orb--c {
-  animation: drift-a 22s ease-in-out infinite reverse;
-}
-
-/* 功能页：呼吸 + 缓慢自转，暗示"模块化" */
-.orb-field--pulse .orb--a {
-  animation: pulse 9s ease-in-out infinite;
-}
-.orb-field--pulse .orb--b {
-  animation: pulse 11s ease-in-out infinite reverse;
-}
-.orb-field--pulse .orb--c {
-  animation: drift-b 18s linear infinite;
-}
-
-/* 联系页：横向流动，像信号波纹 */
-.orb-field--wave .orb--a {
-  animation: wave 20s ease-in-out infinite;
-}
-.orb-field--wave .orb--b {
-  animation: wave 26s ease-in-out infinite reverse;
-}
-.orb-field--wave .orb--c {
-  animation: drift-a 16s ease-in-out infinite;
-}
-
-@keyframes drift-a {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(6vmax, 4vmax, 0) scale(1.08); }
-}
-
-@keyframes drift-b {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.04); }
-  50% { transform: translate3d(-5vmax, -3vmax, 0) scale(1); }
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 0.5; }
-  50% { transform: scale(1.14); opacity: 0.68; }
-}
-
-@keyframes wave {
-  0%, 100% { transform: translate3d(-4vmax, 0, 0) scaleY(1); }
-  50% { transform: translate3d(5vmax, -2vmax, 0) scaleY(1.12); }
-}
+/* 光斑的位移与缩放由 src/motion/orbMotion.ts 经 rAF 写在 transform 上：
+   三个页面各一套参数（design.md 2.5），但共用互质周期，长期不重复。
+   原先三个固定周期的 CSS keyframes 已移除。 */
 
 /* ---------- 玻璃容器 ---------- */
 
@@ -462,66 +414,189 @@ button {
 }
 
 .sidebar__nav {
+  /* 指示条的定位参照物 */
+  position: relative;
   display: grid;
   gap: var(--space-sm);
 }
 
+/* 选中指示条：位置与尺寸由 Sidebar 用 GSAP 写在上，切换时沿 smootherstep 曲线滑过去。
+   注意：它取代了“选中按钮自己变色”的做法，所以按钮不再有背景/边框过渡。 */
+.sidebar__pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-radius: var(--radius-md);
+  background: var(--glass-1);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar__btn {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-md);
   width: 100%;
   min-height: 46px;
   padding: 12px 16px;
-  border: 1px solid transparent;
+  border: none;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--fg-muted);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition:
-    background-color var(--morph) var(--ease-out),
-    color var(--morph) var(--ease-out),
-    border-color var(--morph) var(--ease-out),
-    transform var(--morph) var(--ease-out);
+  /* 只留文字颜色的短过渡；位置感完全交给指示条 */
+  transition: color 220ms ease;
 }
 
 .sidebar__btn:hover {
   color: var(--fg);
-  background: var(--glass-2);
-  transform: translateX(2px);
 }
 
 .sidebar__btn[aria-current='true'] {
   color: var(--fg);
-  background: var(--glass-1);
-  border-color: var(--glass-border);
 }
 
 .sidebar__dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--fg-muted);
-  transition: background-color var(--morph) var(--ease-out), transform var(--morph) var(--ease-out);
+  background: currentColor;
+  opacity: 0.45;
+  transition: background-color 220ms ease, opacity 220ms ease;
 }
 
 .sidebar__btn[aria-current='true'] .sidebar__dot {
   background: var(--accent);
-  transform: scale(1.35);
+  opacity: 1;
 }
+
+/* ---------- 侧栏页脚：分隔线 + 身份行，菜单从下方拉出 ---------- */
 
 .sidebar__foot {
   margin-top: auto;
-  display: grid;
-  gap: var(--space-sm);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
   font-size: 13px;
   color: var(--fg-muted);
 }
 
+/* 这一条横线及其以下的内容，会随菜单拉出而整体上抬（页脚贴底，长高时顶边自然上移） */
+.sidebar__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--glass-border);
+}
+
+.sidebar__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sidebar__who {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.sidebar__more {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease;
+}
+
+/* hover 只加一层很淡的底，且永远不画边框：
+   展开时若再给按钮自己围一圈框，会和下方菜单面板叠成两层深色框 */
+.sidebar__more:hover {
+  color: var(--fg);
+  background: var(--glass-2);
+}
+
+.sidebar__more[aria-expanded='true'] {
+  color: var(--fg);
+}
+
+/* 「更多」图标：三段圆点 → 连成横线 → 整体转 90° → 顶部展出箭头 ↑ */
+.sidebar__more-icon {
+  display: block;
+  overflow: visible;
+}
+
+.sidebar__more-dot {
+  fill: currentColor;
+}
+
+/* 初始隐藏；展开时由 GSAP 从顶点向外“展出”。
+   写在 CSS 里而不是属性上，避免首帧闪一下箭头 */
+.sidebar__more-head {
+  opacity: 0;
+}
+
+/* 剪裁层：高度 0 → 自然高度，避免收起时残留间距 */
+.sidebar__menu-wrap {
+  height: 0;
+  overflow: hidden;
+}
+
+/* 刻意**不给**这层加玻璃面板：菜单本身只是几个普通按钮，
+   再套一层框会和身份行、更多按钮叠成好几层矩形。
+   主题色与时段只在菜单外的身份行显示一次。 */
+.sidebar__menu {
+  margin-top: 8px;
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar__menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 180ms ease;
+}
+
+.sidebar__menu-item:hover {
+  background: var(--glass-2);
+}
+
+/* 纯文字按钮（登录页的“返回欢迎页”等处用） */
 .sidebar__link {
   background: none;
   border: none;
@@ -550,15 +625,41 @@ button {
 
 .section {
   height: 100%;
-  padding: clamp(28px, 5vh, 64px) clamp(24px, 5vw, 72px);
+  /* 矮视口优先靠压缩留白与卡片内边距解决，而不是一上来就缩小字号 */
+  padding: clamp(16px, 3.6vh, 56px) clamp(24px, 5vw, 72px);
+  display: flex;
+  flex-direction: column;
+  /* 内容装得下时垂直居中；装不下时 margin:auto 归零 → 从顶部开始并可滚动 */
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.section__body {
+  width: 100%;
+  margin-block: auto;
+}
+
+/* 纵向整屏切换：内容装得下时采用（滚轮 / 上下键 / 上下滑） */
+.viewport__track[data-axis='y'] .section {
+  height: 100%;
+}
+
+/* 横向切换：内容装不下时转为手机逻辑 —— 左右滑切页，正文自己纵向滚动 */
+.viewport__track[data-axis='x'] {
+  display: flex;
+  flex-direction: row;
+}
+
+.viewport__track[data-axis='x'] .section {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
 }
 
 .section__head {
   display: grid;
   gap: var(--space-sm);
-  margin-bottom: var(--space-xl);
+  margin-bottom: clamp(14px, 3vh, 32px);
 }
 
 .section__eyebrow {
@@ -577,7 +678,7 @@ button {
 }
 
 .section__title {
-  font-size: clamp(24px, 4vw, 38px);
+  font-size: clamp(20px, min(4vw, 3.4vh), 38px);
 }
 
 .section__desc {
@@ -623,26 +724,25 @@ button {
 
 .intro {
   display: grid;
-  gap: var(--space-xl);
+  gap: clamp(16px, 3.4vh, 32px);
   align-content: center;
-  min-height: 100%;
 }
 
 .intro__stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: clamp(10px, 1.8vh, 16px);
 }
 
 .stat {
-  padding: var(--space-lg);
+  padding: clamp(14px, 2.4vh, 24px);
   border-radius: var(--radius-md);
   display: grid;
   gap: 6px;
 }
 
 .stat__value {
-  font-size: 26px;
+  font-size: clamp(20px, 2.6vh, 26px);
   font-weight: 700;
 }
 
@@ -655,27 +755,31 @@ button {
 
 .feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
-  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: clamp(10px, 1.8vh, 16px);
 }
 
 .feature-card {
-  padding: var(--space-lg);
+  padding: clamp(14px, 2.4vh, 24px);
   border-radius: var(--radius-md);
   display: grid;
   gap: var(--space-sm);
   cursor: pointer;
-  transition: transform var(--morph) var(--ease-out), box-shadow var(--morph) var(--ease-out);
+  /* 悬停位移用独立的 `translate` 属性，**不能**用 transform：
+     卡片是入场的 [data-reveal] 目标，而 transform 上的 transition 会把
+     GSAP 逐帧写入的起始位移「拦」下来 —— 卡片拿不到起始值，
+     于是标题组被推到卡片下方，整屏重叠（实测 57/116 帧、最深 47px）。 */
+  transition: translate var(--morph) var(--ease-out), box-shadow var(--morph) var(--ease-out);
 }
 
 .feature-card:hover {
-  transform: translateY(-3px);
+  translate: 0 -3px;
   box-shadow: 0 28px 60px var(--glass-shadow);
 }
 
 .feature-card__icon {
-  width: 40px;
-  height: 40px;
+  width: clamp(32px, 4.6vh, 40px);
+  height: clamp(32px, 4.6vh, 40px);
   border-radius: 13px;
   display: grid;
   place-items: center;
@@ -706,13 +810,13 @@ button {
 
 .contact {
   display: grid;
-  gap: var(--space-md);
+  gap: clamp(10px, 1.8vh, 16px);
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   align-content: start;
 }
 
 .contact__card {
-  padding: var(--space-lg);
+  padding: clamp(14px, 2.4vh, 24px);
   border-radius: var(--radius-md);
   display: grid;
   gap: var(--space-sm);
@@ -879,6 +983,29 @@ code {
   color: var(--fg-muted);
 }
 
+/* ---------- 滚动条 ---------- */
+
+/*
+ * 隐藏滚动条但保留滚动能力。
+ * 玻璃界面里一条粗滚动条非常破坏观感，而横向模式下正文是要滚的，
+ * 所以这里只藏"轨道"、不禁止滚动。
+ * 例外：后台的宽表格（.table-wrap）保留滚动条 —— 那里的滚动条是
+ * "还有更多列"的必要提示，藏掉会让人以为没有数据。
+ */
+.section,
+.sidebar,
+.admin {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 旧 Edge */
+}
+
+.section::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar,
+.admin::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 900px) {
@@ -908,19 +1035,18 @@ code {
 
   .sidebar__foot {
     margin: 0 0 0 auto;
-    padding: 0 0 0 var(--space-md);
+  }
+
+  /* 窄屏侧栏在顶部，分隔线改到左侧；菜单同样从下方拉出 */
+  .sidebar__bar {
+    padding-top: 0;
+    padding-left: var(--space-md);
     border-top: none;
     border-left: 1px solid var(--glass-border);
-    grid-auto-flow: column;
-    align-items: center;
   }
 
   .sidebar__btn {
     white-space: nowrap;
-  }
-
-  .sidebar__btn:hover {
-    transform: none;
   }
 }
 
