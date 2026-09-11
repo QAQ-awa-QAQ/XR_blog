@@ -1,11 +1,24 @@
+import type { CSSProperties } from 'react'
 import { SITE, type IconName } from '../../content/site'
 import type { User } from '../../api/client'
+import { ANCHORS } from '../../theme/palette'
 
-/** 「更多」页需要的东西：当前账户与退出动作 */
+/** 滑块轨道 = 这一天的 8 段锚点色（末尾补回首段的色，表示 24 点回绕）。
+    「拖到哪儿会变成什么颜色」直接看得见，比另写一套色块列表省事 */
+const SLOT_TRACK = `linear-gradient(90deg, ${[
+  ...ANCHORS.map((a) => `${a.accent} ${((a.hour / 24) * 100).toFixed(1)}%`),
+  `${ANCHORS[0].accent} 100%`,
+].join(', ')})`
+
+/** 「更多」页需要的东西：当前账户、主题偏好与退出动作 */
 type MoreProps = {
   user: User
   themeLabel: string
   accent: string
+  themeAuto: boolean
+  themeHour: number
+  onThemeAuto: (auto: boolean) => void
+  onThemeHour: (hour: number) => void
   onLogout: () => void
 }
 
@@ -148,9 +161,19 @@ export function ContactSection() {
   )
 }
 
-/** 「更多」页：站名、当前账户，以及两个动作（设计稿里“其他信息”的安置处） */
-export function MoreSection({ user, themeLabel, accent, onLogout }: MoreProps) {
+/** 「更多」页：站名、当前账户、主题设置，以及两个动作（设计稿里“其他信息”的安置处） */
+export function MoreSection({
+  user,
+  themeLabel,
+  accent,
+  themeAuto,
+  themeHour,
+  onThemeAuto,
+  onThemeHour,
+  onLogout,
+}: MoreProps) {
   const { more } = SITE
+  const { settings } = more
 
   return (
     <div>
@@ -184,6 +207,45 @@ export function MoreSection({ user, themeLabel, accent, onLogout }: MoreProps) {
           <span className="field__hint">
             {user.role === 'admin' ? '管理员：可进入后台管理内容' : '普通用户'}
           </span>
+        </div>
+
+        <div className="glass more__card more__settings" data-reveal>
+          <span className="tag">设置</span>
+
+          <label className="setting__row" htmlFor="theme-follow">
+            <span className="setting__text">
+              <span className="setting__name">{settings.follow.name}</span>
+              <span className="field__hint">{settings.follow.hint}</span>
+            </span>
+            <input
+              id="theme-follow"
+              type="checkbox"
+              className="switch"
+              checked={themeAuto}
+              onChange={(e) => onThemeAuto(e.target.checked)}
+            />
+          </label>
+
+          <div className="setting__row">
+            <span className="setting__text">
+              <span className="setting__name">{settings.slot.name}</span>
+              <span className="field__hint">
+                {themeAuto ? settings.slot.hintAuto : settings.slot.hintManual}「{themeLabel}」
+              </span>
+            </span>
+          </div>
+
+          <input
+            type="range"
+            className="range"
+            min={0}
+            max={24}
+            step={0.25}
+            value={themeHour}
+            aria-label={settings.slot.name}
+            style={{ '--range-track': SLOT_TRACK } as CSSProperties}
+            onChange={(e) => onThemeHour(Number(e.target.value))}
+          />
         </div>
       </div>
 

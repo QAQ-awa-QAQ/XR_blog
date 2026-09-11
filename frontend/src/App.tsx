@@ -69,6 +69,10 @@ export function App() {
           user={user}
           themeLabel={theme.label}
           accent={theme.accent}
+          themeAuto={theme.auto}
+          themeHour={theme.hour}
+          onThemeAuto={theme.setAuto}
+          onThemeHour={theme.setHour}
           onLogout={logout}
         />
       ) : null}

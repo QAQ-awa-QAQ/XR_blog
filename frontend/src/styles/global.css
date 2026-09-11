@@ -53,6 +53,11 @@
         胶囊宽、溢出量、半径三个都跟着变，交集位置不是一个固定比例 */
   --head-top: 0.185;
   --head-bottom: 0.815;
+  /* ⚠️ 两个「头」的坐标（--head-1x / 1y / 2x / 2y）**不在这里**。
+     它们要引用 --cut-*，而 --cut-* 是 JS 写在 .sidebar 上的；自定义属性里的
+     var() 是在**声明它的那个元素**上求值的 —— 挂在 :root 会因为那里没有
+     --cut-* 而直接取 fallback，亮点就钉死在角落、不跟着胶囊走。
+     所以它们和 .sidebar__edge-heads 放在一起（见下面） */
 
   /* 光斑半径 —— 硬高光那层（ring）与弥散光那层（glow）各一个。
      弥散那层一直比硬高光大一档（当初为了「把光晕做大点」调上去的」。
@@ -66,6 +71,10 @@
      以后改 --glow-r，虚拟光标跟着一起走，不会迹轨。
      实测：1 太大（胶囊口那一团撑得比按钮还宽），0.5 合适 */
   --head-scale: 0.5;
+
+  /* 虚拟光标自己的两档半径 = 真光标那两档 × --head-scale */
+  --head-r: calc(var(--glow-r) * var(--head-scale));
+  --head-r-glow: calc(var(--glow-r-glow) * var(--head-scale));
 
   /* 光斑的**径向落点**：alpha ∝ 1 - √t（t = 距光标的归一化距离，末段 70% 处归零）。
      两个停靠点之间，CSS 是**平分插值**的 —— 只写首尾两站，从光标往外就是一条
@@ -479,53 +488,51 @@ button {
   grid-template-columns: calc(24px + var(--sidebar-width)) 1fr;
 }
 
+/* 侧栏轨道。**两个方向共用**：桌面是竖的一条，手机是横的一条（见文件末尾的响应式区），
+   只有朝向与厚度不同，外观是同一套。
+
+   轨道本体**完全隐形**：没有底色 / 没有边框 / 没有模糊 / 没有投影。
+   可见的边界只有两样 —— 选中那颗玻璃胶囊（.sidebar__pill），
+   以及贴着轮廓的「假边线」（.sidebar__edge 上的 1px 硬高光 + 光晕）。
+   逐项都是实测出来的，不是猜的：
+   · background —— `.glass` 自带 10% 白膜，那是字面意义的「底色」；
+   · backdrop-filter —— blur 会让轨道区域与周围可见地不同，就是「不纯透明」；
+   · box-shadow —— 这条最隐蔽：`rgba(15,23,42,.1)` 是**深色**，55px 模糊紧贴轨道
+     外圈，在深色背景上是一圈更深的暗区，对应的正是「而且更深了」。
+   ⚠️ box-shadow 必须写 none 而**不能整条删掉** —— 删掉会退回 .glass 的
+     `inset 0 1px 0 rgba(255,255,255,.55)`，那条又会在顶边添一道白边 */
 .sidebar {
   margin: var(--space-lg) 0 var(--space-lg) var(--space-lg);
   padding: var(--space-lg) var(--space-md);
-  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-radius: 999px;
+  border: none;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  /* 胶囊要能溢出到轨道外，裁了就没了 */
+  overflow: visible;
+  /* 胶囊溢出到正文之上，否则会被后面渲染的 .viewport 盖住 */
+  position: relative;
+  z-index: 2;
 }
 
-/* iOS 27 液态玻璃胶囊：高度由内容决定、在整列里上下居中，两端半圆
-   （999px 会被宽度限死成「宽度的一半」，于是顶边、底边各成一个半圆）。
-
-   三件事一起才读得出「液态」：
-   · **折射** —— backdrop-filter 里挂 SVG 位移滤镜（见 design/glass.ts），
-     背景被玻璃的厚薄挤歪。顺序不能反：先模糊就没什么可挤的了。
-     所以带 url() 的那条把模糊从 18px 降到 10px —— 18px 会直接把形变糊没。
-     前一条不带 url() 是**回退**：浏览器不认 url() 时退化成普通毛玻璃，
-     而不是整条 backdrop-filter 失效、玻璃变全透明。
-   · **光晕** —— 外侧一圈取自主题色的柔光（随主题 4s 过渡）。
-   · **厚度** —— 描边 + 顶部内高光 + 底部内反光。但那三条**不在这一层上**，
-     因为胶囊比面板大一圈，它们会在胶囊内部划出一条框线；
-     它们画在 .sidebar__edge 上，那里有一个跟随胶囊的「洞」。
-   · overflow 保持 visible：胶囊得溢出到面板外，裁了就没了。 */
+/* 桌面：**纵向**轨道。这里只管方向相关的一条 —— 隐形的那些已收进 .sidebar
+   基础规则，两个方向共用（手机是同一套转 90°） */
 @media (min-width: 901px) {
   .sidebar {
     align-self: center;
-    border-radius: 999px;
-    /* 纵向内边距只留基准 6px：胶囊要靠负外边距顶出面板（见下面的 .sidebar__nav）。
-       左右仍归零 —— 胶囊要**溢出**面板，留边距就做不到了 */
+    /* 纵向内边距只留基准 6px：胶囊要靠负外边距顶出轨道（见下面的 .sidebar__nav）。
+       左右仍归零 —— 胶囊要**溢出**轨道，留边距就做不到了 */
     padding: calc(6px * var(--sidebar-scale)) 0;
-    border: none;
-    /* 面板**完全隐形**。
-       逐项都是实测出来的，不是猜的：
-       · background —— `.glass` 自带 10% 白膜，那是字面意义的「底色」。
-       · backdrop-filter —— blur 会让面板区域与周围可见地不同，就是「不纯透明」。
-       · box-shadow —— 这条最隐蔽：`rgba(15,23,42,0.1)` 是**深色**，55px 模糊紧贴
-         面板外圈，在深色背景上是一圈更深的暗区，对应的正是「而且更深了」。
-       ⚠️ 必须写 `box-shadow: none` 而**不能整条删掉** —— 删掉会退回 `.glass` 的
-       `inset 0 1px 0 rgba(255,255,255,0.55)`，那条又会在顶部添一道白边。 */
-    background: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: none;
-    /* 胶囊溢出到正文区域之上，否则会被后面渲染的 .viewport 盖住 */
-    position: relative;
-    z-index: 2;
   }
+}
+
+/* ⚠️ 以下「壳」与「假边线的头」两块**两个方向共用**（原先只在桌面媒体查询里）。
+   缩进保持原样，方便在 diff 里一眼看出是搬出来的，内容没动 */
 
   /* 侧栏的「壳」—— 它现在**只负责一件事**：给光标光晕提供一个
      「会被胶囊挖洞」的载体。
@@ -545,6 +552,7 @@ button {
      洞的位置 / 尺寸由 Sidebar 用 GSAP 同步写在 --cut-* 上（与指示条同源）。
      默认 --cut-w/h 为 0 => 洞不存在，不会首帧闪一下。 */
   .sidebar__edge {
+    display: block;
     position: absolute;
     /* 壳比面板大一圈（pad），让**它自己的 border box** 能容下向外扩散的光晕。
        不撑开的话 mask-clip 会把光连同内容一起裁在面板内，光就散不出去。
@@ -614,30 +622,24 @@ button {
   .sidebar__edge-heads-glow {
     position: absolute;
     border-radius: inherit;
+    /* 四个亮点 = (1x,1y) (1x,2y) (2x,1y) (2x,2y)。
+       纵向（桌面）：边线在左右 => 横坐标钉在左右边，纵坐标由 --cut-* 现算。
+       横向（手机）：整个对调，覆盖写在文件末尾的响应式区里。
+       ⚠️ 必须声明在**这里**（而不是 :root）—— 它们引用 --cut-*，而自定义属性里的
+       var() 是在声明它的元素上求值的：挂到 :root 会因为那里没有 --cut-* 而
+       直接取 fallback（1px），亮点就钉在角落、不跟着胶囊走 */
+    --head-1x: 0px;
+    --head-1y: calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-top));
+    --head-2x: 100%;
+    --head-2y: calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom));
     /* 4 个亮点 = 左右边缘 × 上 / 下两个断点，每个都是一个**虚拟鼠标**：
        落点曲线、强度与真光标同源（--glow-falloff），半径则是鼠标那层
        乘 --head-scale —— 缩一半才收得住，不会盖过胶囊本身 */
     background:
-      radial-gradient(
-        calc(var(--glow-r) * var(--head-scale))
-          circle at 0px calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-top)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r) * var(--head-scale))
-          circle at 0px calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r) * var(--head-scale))
-          circle at 100% calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-top)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r) * var(--head-scale))
-          circle at 100% calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom)),
-        var(--glow-falloff)
-      );
+      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-1y), var(--glow-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-2y), var(--glow-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-1y), var(--glow-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-2y), var(--glow-falloff));
     pointer-events: none;
   }
 
@@ -658,28 +660,12 @@ button {
     padding: var(--glow-pad);
     background-origin: content-box;
     background-clip: content-box;
-    /* 半径换成弥散那层的那一档，与 ::before 完全一致（再乘一次 --head-scale） */
+    /* 半径换成弥散那层的那一档，与 ::before 完全一致（同样乘 --head-scale） */
     background-image:
-      radial-gradient(
-        calc(var(--glow-r-glow) * var(--head-scale))
-          circle at 0px calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-top)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r-glow) * var(--head-scale))
-          circle at 0px calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r-glow) * var(--head-scale))
-          circle at 100% calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-top)),
-        var(--glow-falloff)
-      ),
-      radial-gradient(
-        calc(var(--glow-r-glow) * var(--head-scale))
-          circle at 100% calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom)),
-        var(--glow-falloff)
-      );
+      radial-gradient(var(--head-r-glow) circle at var(--head-1x) var(--head-1y), var(--glow-falloff)),
+      radial-gradient(var(--head-r-glow) circle at var(--head-1x) var(--head-2y), var(--glow-falloff)),
+      radial-gradient(var(--head-r-glow) circle at var(--head-2x) var(--head-1y), var(--glow-falloff)),
+      radial-gradient(var(--head-r-glow) circle at var(--head-2x) var(--head-2y), var(--glow-falloff));
     filter: blur(var(--glow-blur));
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
@@ -687,22 +673,13 @@ button {
     mask-composite: exclude;
   }
 
-  /* 负外边距把整列往上 / 下各顶出面板的量 —— 与胶囊左右溢出的量完全一样，
-     于是最上 / 最下的胶囊在**四周**都比面板大一圈。
-     15 = 面板的 6px 纵向内边距 + 要溢出的 9px，两者都随倍率走 */
+/* 负外边距把整列往上 / 下各顶出轨道的量 —— 与胶囊左右溢出的量完全一样，
+   于是最上 / 最下的胶囊在**四周**都比轨道大一圈。
+   15 = 轨道的 6px 纵向内边距 + 要溢出的 9px，两者都随倍率走。
+   这一条是**纵向专属** —— 手机靠「轨道高度本身比胶囊矮」达成同样的溢出 */
+@media (min-width: 901px) {
   .sidebar__nav {
     margin-block: calc(-15px * var(--sidebar-scale));
-  }
-}
-
-/* 壳层只在桌面出现：移动端侧栏是顶部横条，胶囊不会溢出，没有可切的地方 */
-.sidebar__edge {
-  display: none;
-}
-
-@media (min-width: 901px) {
-  .sidebar__edge {
-    display: block;
   }
 }
 
@@ -1141,19 +1118,16 @@ button {
   border-radius: calc(var(--radius-lg) + var(--glow-pad));
 }
 
-/* 桌面端：面板本体上的光晕关掉。
+/* 两个方向都关掉面板本体上的光晕。
    本体的轮廓是一条**完整的**胶囊边，而那圈边已经被胶囊按钮盖住了 ——
-   光晕沿着它描，描的是一条看不见的线。真正可见的边在 .sidebar__edge 上
-   （它被胶囊挖了洞），所以桌面端让光晕跟着壳走。
+   沿着它描，描的是一条看不见的线。真正可见的边在 .sidebar__edge 上
+   （它被胶囊挖了洞），所以光晕跟着壳走。
    --glow / --glow-x / --glow-y 写在 .sidebar 上，壳作为它的子元素会**继承**下来；
    两者 insets 都是 0、尺寸相同，所以百分比坐标含义也一致，不需要改 useCursorGlow。
-   移动端没有假边栏（.sidebar__edge 就 display: none），仍用本体。
    注意：这条必须写在上面那组 ::after 规则**之后** —— 两者特性相同，靠源顺序决胜 */
-@media (min-width: 901px) {
-  .sidebar::after,
-  .sidebar::before {
-    content: none;
-  }
+.sidebar::after,
+.sidebar::before {
+  content: none;
 }
 
 .feature-card__icon {
@@ -1436,49 +1410,191 @@ code {
   height: 0;
 }
 
+/* ---------- 「更多」页的设置项 ---------- */
+
+/* 设置卡横跨整行：里面是「标签 + 开关」与「标签 + 滑块」两组，
+   挤在半列里滑块会短得不好拖 */
+.more__settings {
+  grid-column: 1 / -1;
+  gap: 14px;
+}
+
+.setting__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.setting__text {
+  display: grid;
+  gap: 2px;
+}
+
+.setting__name {
+  font-weight: 600;
+}
+
+/* 开关：用 checkbox 自己画，不另引组件 */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  position: relative;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-1);
+  cursor: pointer;
+  transition: background-color 220ms ease, border-color 220ms ease;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.28);
+  transition: translate 220ms var(--ease-out);
+}
+
+.switch:checked {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.switch:checked::after {
+  translate: 18px 0;
+}
+
+/* 时段滑块：轨道直接铺这一天 8 段锚点色，「拖到哪儿变什么颜色」一眼可见 */
+.range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--range-track, var(--glass-1));
+  cursor: pointer;
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3);
+}
+
+.range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+}
+
+.range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 900px) {
+  /* 手机：**横向**轨道 —— 桌面那一套转 90°。方向差别只有三处：
+     ① 两个「头」从左右边线沿纵轴分布，改成从上下边线沿横轴分布（含断点比例）；
+     ② 轨道的厚度（桌面是 --sidebar-width，这里换成了高度）；
+     ③ 胶囊躺下来（宽 > 高），并整体比上一版放大 1.2 —— 图标不跟着变。 */
+  :root {
+    /* 这一版相对上一版整体放大 1.2（轨道 / 间距 / 溢出都跟着走） */
+    --mobile-grow: 1.2;
+    /* 躺下的胶囊：把桌面那枚（60 宽 × 75.6 高）转 90° => 宽 = 高 × 75.6 / 60 */
+    --mobile-btn-h: calc(48px * var(--mobile-grow));
+    --mobile-btn-w: calc(var(--mobile-btn-h) * 75.6 / 60);
+    /* 光晕再收一半：虚拟光标的半径 = 真光标 × 0.5（桌面那档）再 × 0.5。
+       只覆盖手机端 —— 轨道比桌面窄得多，同一个半径在这里显得太满 */
+    --head-scale: 0.25;
+    /* 断点比例要**重推**：桌面那对是「竖向胶囊 ∩ 左右边线」，
+       这里换成「横向胶囊 ∩ 上下边线」，半径 / 溢出 / 长度三个都变了。
+       公式 (r - √(r² - (r-ov)²)) / W，代入 r = 28.8、ov = 3.84、W = 72.58
+       （ov = (胶囊高 - 轨道厚) / 2，所以下面 height 里那个加宽量也算进来了）
+       ⚠️ 改 --mobile-grow、改 height 里的加宽量、或改面板宽 → 重算这两个数 */
+    --head-top: 0.199;
+    --head-bottom: 0.801;
+  }
+
+  /* 横向：把两个轴对调。同样必须写在用到 --cut-* 的元素上（理由见 --head-* 那段） */
+  .sidebar__edge-heads,
+  .sidebar__edge-heads-glow {
+    --head-1x: calc(var(--cut-x, 1px) + var(--cut-w, 0px) * var(--head-top));
+    --head-1y: 0px;
+    --head-2x: calc(var(--cut-x, 1px) + var(--cut-w, 0px) * var(--head-bottom));
+    --head-2y: 100%;
+  }
+
   .shell {
     grid-template-columns: 1fr;
     /* 横条在**底部**：视口占满剩余，横条落在最后一行。
-        DOM 里侧栏在视口前面，所以靠 order 把它排到后头 */
+       DOM 里侧栏在视口前面，所以靠 order 把它排到后头 */
     grid-template-rows: 1fr auto;
   }
 
   .sidebar {
     order: 1;
     margin: 0 var(--space-md) var(--space-md);
-    padding: var(--space-md);
+    /* 长度**贴着按钮**：justify-self 让它不再被网格拉满，宽度收缩到内容；
+       再靠 .sidebar__nav 的负外边距把首尾两枚胶囊顶出轨道两端 —— 与桌面同一条手法。
+       （桌面是"长度由内容决定 + 负 margin-block"，这里是"长度由内容决定 + 负 margin-inline"） */
+    justify-self: center;
+    /* 厚度 = 胶囊高 - 两倍溢出，末尾那个 +5px 是这一次的「上下加宽」。
+       溢出的量与桌面左 / 右溢出同源，一起放大 */
+    height: calc((48px - (60px * var(--sidebar-scale) - var(--sidebar-width))) * var(--mobile-grow) + 5px);
+    /* 两端各多留 5px（轨道长度合计 +10px）——
+       轨道宽度是收缩到内容的，所以加内边距就等于加长度；
+       顺带把首尾胶囊「顶出轨道」的量从 12.34 收到 7.34，图标就不再贴着边线 */
+    padding: 0 calc(6px * var(--sidebar-scale) * var(--mobile-grow) + 5px);
     flex-direction: row;
     align-items: center;
-    /* 按钮只剩图标后不会再溢出，这行原本就是为文字标签准备的；
-       而它一旦生效就会连纵向一起裁，所以直接去掉 */
-    overflow: visible;
+    justify-content: center;
   }
 
   .sidebar__nav {
     display: flex;
     gap: var(--space-sm);
+    /* 首尾胶囊顶出轨道两端：15 = 轨道内边距 6 + 要溢出的 9，都随倍率与放大倍数走 */
+    margin-inline: calc(-15px * var(--sidebar-scale) * var(--mobile-grow));
   }
 
-  /* 底栏里按钮不能再用负边距溢出（会顶到面板边上），回到 48px 正圆
-     —— 仍在 44×44 的触控下限之上 */
+  /* 躺下的胶囊。图标尺寸**不动** —— --icon-size 由 JS 写在侧栏上，这里不碰，
+     所以变大的是按钮与轨道，图标还是原来那么大 */
   .sidebar__btn {
-    width: 48px;
-    height: 48px;
+    width: var(--mobile-btn-w);
+    height: var(--mobile-btn-h);
     margin-inline: 0;
+  }
+
+  /* 翻页指示（「01 / 04」+ 四个圆点）在手机上删掉 ——
+     底部横条已经承担了同样的导航，两套并存只会多占一块地方 */
+  .pager {
+    display: none;
   }
 }
 
 @media (max-width: 560px) {
   .section {
-    padding: var(--space-lg) var(--space-md) 84px;
-  }
-
-  .pager {
-    left: var(--space-md);
-    right: auto;
+    /* 底部那 84px 原本是给翻页指示让位的；它在手机上已经删掉，这里归零 */
+    padding: var(--space-lg) var(--space-md);
   }
 
   .contact,

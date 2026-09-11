@@ -46,7 +46,12 @@ export type SiteContent = {
     items: ContactItem[]
     qr: { label: string; note: string }
   }
-  more: SectionCopy
+  more: SectionCopy & {
+    settings: {
+      follow: { name: string; hint: string }
+      slot: { name: string; hintAuto: string; hintManual: string }
+    }
+  }
 }
 
 export const SITE: SiteContent = {
@@ -94,6 +99,17 @@ export const SITE: SiteContent = {
   more: {
     eyebrow: 'More',
     title: '更多',
-    desc: '本站的基本信息与当前账户。主题色随本地时间连续过渡，不需要手动切换。',
+    desc: '本站的基本信息与当前账户。主题色默认跟随本地时间连续过渡，也可以在这里手动指定时段。',
+    settings: {
+      follow: {
+        name: '跟随时间',
+        hint: '每分钟按本地时间重新取色，背景连续过渡，不会到点突跳。',
+      },
+      slot: {
+        name: '主题时段',
+        hintAuto: '跟随时间中 · 当前',
+        hintManual: '已固定为',
+      },
+    },
   },
 }

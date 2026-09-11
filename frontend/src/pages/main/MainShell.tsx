@@ -44,6 +44,11 @@ type Props = {
   user: User
   themeLabel: string
   accent: string
+  /** 主题偏好：跟随时间 / 手动时段（直接透传给「更多」页的设置项） */
+  themeAuto: boolean
+  themeHour: number
+  onThemeAuto: (auto: boolean) => void
+  onThemeHour: (hour: number) => void
   onLogout: () => void
 }
 
@@ -57,7 +62,16 @@ type Props = {
  * 切换本身不靠"事件 + 时间锁"：滚轮只更新目标值，画面由临界阻尼弹簧逐帧追过去，
  * 所以连续快滚会合并成最新目标，运动途中反向也能保留速度改向。
  */
-export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
+export function MainShell({
+  user,
+  themeLabel,
+  accent,
+  themeAuto,
+  themeHour,
+  onThemeAuto,
+  onThemeHour,
+  onLogout,
+}: Props) {
   const [target, setTarget] = useState(0)
 
   const targetRef = useRef(0)
@@ -382,6 +396,10 @@ export function MainShell({ user, themeLabel, accent, onLogout }: Props) {
                 user={user}
                 themeLabel={themeLabel}
                 accent={accent}
+                themeAuto={themeAuto}
+                themeHour={themeHour}
+                onThemeAuto={onThemeAuto}
+                onThemeHour={onThemeHour}
                 onLogout={onLogout}
               />
             </div>
