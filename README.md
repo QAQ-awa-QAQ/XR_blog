@@ -12,11 +12,11 @@
 
 - 欢迎页 GSAP 动画：水滴玻璃浮出 → 文字逐字凝聚 → 「登录 →」浮现，可点击跳过
 - 主题色随**本地时间**在 8 个时段之间按分钟连续插值，夜间自动转深色；文字色是**离散两档**（按背景亮度切换），保证任何时刻对比度达标
-- Liquid Glass 视觉：`backdrop-filter` 毛玻璃、1px 高光边框、多层光斑背景
+- iOS 27 液态玻璃：`feTurbulence` + `feDisplacementMap` 让背景**真的被玻璃挤歪**（不只是模糊），外缘带一圈主题色柔光；带 `url()` 的声明配一条不带 `url()` 的回退，不支持的浏览器上退化成普通毛玻璃而不是失效
 - 主页面**双轴向**：内容装得下就走纵向整屏切换；装不下自动转手机逻辑（横向切换 + 正文纵向滚动）
 - 切换由**临界阻尼弹簧**逐帧追赶：连滚会合并成最新目标，途中反向会保留速度改向；收尾有亚像素吸附，不会「停不下来」
 - 卡片入场：波包式错开 + 长距离位移，流入方向**跟随翻页方向**；登录后首次进入会减弱幅度
-- 侧栏：选中态是**滑动指示条**；页脚「更多」把分隔线及以下内容整体上抬、拉出菜单，图标同时变形为 ↑
+- 侧栏：52px 竖排胶囊里四个等大的图标按钮（首页 / 功能 / 联系 / 更多），选中态是**滑动指示条**；按钮只剩图标，标签走 `aria-label` / `title`
 - 滚动条隐藏（不占位、不影响滚动），尊重 `prefers-reduced-motion`，键盘焦点可见
 
 **账号与权限**
@@ -47,15 +47,16 @@
 | 后端 | Go · Gin · GORM · SQLite（纯 Go driver，免 CGO） |
 | 缓存/会话 | Redis 7（AOF 持久化） |
 | 部署 | 单容器内 Nginx + Go 双进程，多阶段构建 |
-| 测试 | 后端 Go `testing` + miniredis（24 项）；前端 `node --test` 自检 21 项 |
+| 测试 | 后端 Go `testing` + miniredis（24 项）；前端 `node --test` 自检 25 项 |
 
 ---
 
 ## 运动与视觉设计
 
-动画参数全部集中在 `frontend/src/motion/tokens.ts`，纯函数在 `motion/math.ts`
-（不依赖 DOM，可以直接被 `node --test` 导入断言）。前端自检用 `npm run check`，
-已接在 `prebuild` 上，所以 `npm run build` 会先跑完 21 项断言。
+动画参数集中在 `frontend/src/motion/tokens.ts`，纯函数在 `motion/math.ts`
+（不依赖 DOM，可以直接被 `node --test` 导入断言）；自绘控件的设计参数（图标路径、
+形变几何、侧栏尺寸口径）在 `frontend/src/design/`，其 `README.md` 记录为什么是这些值。
+前端自检用 `npm run check`，已接在 `prebuild` 上，所以 `npm run build` 会先跑完 25 项断言。
 
 关键决策与踩过的坑都记在 `DESIGN-LOG.md`，例如：
 
@@ -64,6 +65,9 @@
 - 轴判定不能看 `scrollHeight`：滚动区域会把 `transform` 造成的溢出算进去，入场位移会把轴误判成横向
 - 入场目标元素**不能挂 CSS `transform` 过渡**：过渡会把 GSAP 写入的起始值拦下来
 - 文字色必须离散两档：插值会让某个时刻的前景/背景对比度归零
+- 液态玻璃的折射只能靠 SVG 位移滤镜，而且**必须先挤后模糊**：先模糊就没什么可挤的了。
+  另外带 `url()` 的 `backdrop-filter` 要另写一条不带 `url()` 的声明当回退 ——
+  否则不支持的浏览器会把整条丢掉，玻璃直接变全透明
 
 ---
 
@@ -120,10 +124,11 @@ npm run dev                  # 5173，/api 自动代理到 8081
 ```
 backend/           Go 服务（cmd/server、internal/{handler,middleware,service,store}、tests）
 frontend/
+  src/design/      自绘控件的设计参数（图标路径、形变几何）与其口径说明
   src/motion/      运动数学与参数（纯函数，可被 node --test 直接断言）
   src/theme/       按本地时间连续变色的主题
   src/content/     站点文案（当前仍是占位内容）
-  src/pages/main/  主页面：双轴向切换、侧栏、三个板块
+  src/pages/main/  主页面：双轴向切换、侧栏、四个板块
   scripts/         自检脚本 check-{content,motion,theme}.mjs
   reference/       主题对照页（人工核对色板用）
 deploy/            Nginx 配置与容器入口脚本
@@ -252,6 +257,7 @@ then open  http://localhost:5173/reference/palette-review.html
 │  ├─ src/
 │  │  ├─ theme/                 # 时段取色（palette + useTimeTheme）
 │  │  ├─ motion/                # 运动数学：缓动 / 弹簧 / 波包 / 光斑
+│  │  ├─ design/                # 自绘控件的设计参数（图标路径、形变几何）+ 口径说明
 │  │  ├─ content/site.ts        # 全站文案（与组件分离）
 │  │  ├─ pages/                 # Welcome / Auth / Admin / main
 │  │  ├─ components/            # Orbs / Field / ErrorBanner
@@ -290,7 +296,7 @@ then open  http://localhost:5173/reference/palette-review.html
 
 ## 已知限制
 
-- 简介 / 功能 / 联系三页文案与功能入口为**占位内容**，等待替换
+- 首页 / 功能 / 联系 / 更多四页文案与功能入口为**占位内容**，等待替换
 - 暂未提供修改密码接口，改密需重建数据库或新增接口
 - 未内置 HTTPS，生产部署请在外部反向代理或平台上终止 TLS，并把 `COOKIE_SECURE` 设为 `true`
 
