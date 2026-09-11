@@ -55,7 +55,12 @@ export function App() {
         />
       ) : null}
       {stage === 'main' && user ? (
-        <MainShell user={user} themeLabel={theme.label} onLogout={logout} />
+        <MainShell
+          user={user}
+          themeLabel={theme.label}
+          accent={theme.accent}
+          onLogout={logout}
+        />
       ) : null}
     </>
   )

@@ -10,7 +10,7 @@ function alpha(hex: string, a: number): string {
 }
 
 /** 把主题写成 CSS 变量，全局样式表只消费变量，不写死颜色。 */
-export function applyTheme(t: ThemeTokens) {
+export function applyTheme(t: ThemeTokens, now = new Date()) {
   const root = document.documentElement.style
   root.setProperty('--bg-1', t.bg1)
   root.setProperty('--bg-2', t.bg2)
@@ -24,6 +24,17 @@ export function applyTheme(t: ThemeTokens) {
   root.setProperty('--glass-2', `rgba(255,255,255,${(t.glassAlpha * 0.55).toFixed(3)})`)
   root.setProperty('--glass-border', `rgba(255,255,255,${Math.min(0.75, t.glassAlpha * 2.6).toFixed(3)})`)
   root.setProperty('--glass-shadow', `rgba(15,23,42,${(0.05 + t.glassAlpha * 0.5).toFixed(3)})`)
+
+  // 把实际生效的参数写到 DOM 上：便于界面展示，也让"颜色是否连续"可被脚本断言
+  document.documentElement.dataset.timeTheme = JSON.stringify({
+    label: t.label,
+    accent: t.accent,
+    bg1: t.bg1,
+    fg: t.fg,
+    glassAlpha: Number(t.glassAlpha.toFixed(3)),
+    at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+  })
+
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', t.bg1)
