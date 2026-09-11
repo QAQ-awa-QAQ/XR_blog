@@ -14,6 +14,7 @@ const sections = [
   ['intro', SITE.intro],
   ['features', SITE.features],
   ['contact', SITE.contact],
+  ['more', SITE.more],
 ]
 
 test('每个板块都有 eyebrow / title / desc', () => {

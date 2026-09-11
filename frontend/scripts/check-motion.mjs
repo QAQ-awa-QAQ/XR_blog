@@ -10,6 +10,16 @@ import {
 } from '../src/motion/math.ts'
 import { orbState, orbAmplitudeBounds } from '../src/motion/orbMotion.ts'
 import { durations, omega } from '../src/motion/tokens.ts'
+import {
+  DOTS_CLOSED,
+  DOTS_HEIGHT,
+  DOTS_OPEN,
+  DOTS_Y,
+  HEAD_ORIGIN,
+  HEAD_PATH,
+  STEM_ORIGIN,
+} from '../src/design/morph.ts'
+import { ICON_VIEWBOX, NAV_ICON_PATHS } from '../src/design/icons.ts'
 
 /**
  * 运动数学校验。
@@ -144,4 +154,70 @@ test('时间分档：数值合法且与 ω 换算一致', () => {
   // 顺手锁定整屏切换的刚度：防止无意间改动「翻页手感」。
   // 0.5s → ω = 8（原为 0.67s → 6，按实测手感调快后同步更新）
   assert.ok(omega.page > 7.5 && omega.page < 8.5, `ω 应在 8 附近，实际 ${omega.page}`)
+})
+
+/**
+ * 「更多」按钮的图标形变（三点 → 连成一条线 → 转 90° → 箭头 ↑）。
+ *
+ * 这套坐标是手调的，坏掉的方式又都很隐蔽 —— 旋转时跳一下、接缝露一条半透明缝、
+ * 箭头顶点飘起来，都是 0.3s 里一眼看不出的东西。所以把那几条硬约束锁进断言。
+ */
+
+const CENTER = ICON_VIEWBOX / 2
+const EPSILON = 1e-9
+
+test('「更多」形变：两个状态都绕视图中心，转 90° 时不会跳', () => {
+  assert.equal(STEM_ORIGIN, `${CENTER} ${CENTER}`, '旋转原点必须是视图中心')
+
+  // 收起态：三个点的整体包围盒居中
+  const closedCenter = (DOTS_CLOSED.x[0] + DOTS_CLOSED.x[2] + DOTS_CLOSED.width) / 2
+  assert.ok(Math.abs(closedCenter - CENTER) < EPSILON, `收起态不居中：${closedCenter}`)
+
+  // 展开态：并入的那条线居中
+  const openCenter = (DOTS_OPEN.x[0] + DOTS_OPEN.x[2] + DOTS_OPEN.width) / 2
+  assert.ok(Math.abs(openCenter - CENTER) < EPSILON, `展开态不居中：${openCenter}`)
+
+  // 转 90° 后竖线占的是 y 轴，所以纵向中心也必须是视图中心
+  const dotsCenterY = DOTS_Y + DOTS_HEIGHT / 2
+  assert.ok(Math.abs(dotsCenterY - CENTER) < EPSILON, `纵向不居中：${dotsCenterY}`)
+})
+
+test('「更多」形变：收起态三点等距，展开态相邻段必须重叠', () => {
+  const gaps = []
+  for (let i = 0; i < DOTS_CLOSED.x.length - 1; i++) {
+    gaps.push(DOTS_CLOSED.x[i + 1] - (DOTS_CLOSED.x[i] + DOTS_CLOSED.width))
+  }
+  for (const gap of gaps) {
+    assert.ok(gap > 0, `收起态三点之间要留出可见间隙，实际 ${gap}`)
+  }
+  for (const gap of gaps) {
+    assert.ok(Math.abs(gap - gaps[0]) < EPSILON, '三点必须等距，否则读不出「…」')
+  }
+
+  for (let i = 0; i < DOTS_OPEN.x.length - 1; i++) {
+    const overlap = DOTS_OPEN.x[i] + DOTS_OPEN.width - DOTS_OPEN.x[i + 1]
+    assert.ok(overlap > 0, `展开态相邻段必须重叠，否则接缝会露一道半透明缝（差 ${overlap}）`)
+  }
+  assert.equal(DOTS_OPEN.rx, 0, '圆角不归零的话，转 90° 后看着仍是三个方块')
+})
+
+test('「更多」形变：箭头顶点 = 缩放原点，且落在竖线中轴上', () => {
+  const apex = HEAD_PATH.match(/L\s*(-?[\d.]+)\s+(-?[\d.]+)/)
+  assert.ok(apex, '箭头路径里应能解析出顶点')
+
+  const x = Number(apex[1])
+  const y = Number(apex[2])
+  assert.equal(x, CENTER, '箭头顶点必须落在视图中轴上，否则展开时左右不均匀')
+  // 不是顶点的话，展开时会连顶点一起位移，看着像整个箭头「飘」起来
+  assert.equal(`${x} ${y}`, HEAD_ORIGIN, '缩放原点必须是箭头顶点本身')
+})
+
+test('导航图标：每个分区各有一份非空路径，键与 SectionId 一一对应', () => {
+  assert.deepEqual(Object.keys(NAV_ICON_PATHS).sort(), ['contact', 'features', 'intro', 'more'])
+  for (const [key, paths] of Object.entries(NAV_ICON_PATHS)) {
+    assert.ok(paths.length > 0, `${key} 没有任何路径`)
+    for (const d of paths) {
+      assert.ok(d.trim().startsWith('M'), `${key} 的路径必须以 M 开头：${d}`)
+    }
+  }
 })
