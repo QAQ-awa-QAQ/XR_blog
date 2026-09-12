@@ -20,6 +20,15 @@
   --glass-border: rgba(255, 255, 255, 0.57);
   --glass-shadow: rgba(15, 23, 42, 0.16);
 
+  /* 光标光晕两个层的颜色分量 —— 都由主题按明暗档位注入，曲线形状留在下面：
+     · --glow-rgb      **弥散层**（向外扩散的光晕）：亮色时段深色，深色时段白色；
+     · --glow-edge-rgb **描边层**（1px 硬高光）：亮色时段灰白 —— 深色描边太重、
+       纯白又在浅底上看不见；深色时段同样是白色。
+     ⚠️ 两个分量都必须与引用它们的 falloff 声明在**同一个元素**（:root）上：
+     var() 是在声明它的元素上求值的，声明处拿不到就会被冻成 fallback */
+  --glow-rgb: 15, 23, 42;
+  --glow-edge-rgb: 203, 213, 225;
+
   /* 结构 token（来自 design-system/xr-personal-blog/MASTER.md） */
   --radius-sm: 12px;
   --radius-md: 18px;
@@ -81,18 +90,33 @@
      一条直线在衰减，看上去就是「一圈线性渐变」。把中间几站按 √ 曲线摆上，
      亮度就会先掉得快、尾巴拖得长。
 
-     这是全站光晕的**唯一**落点定义：.sidebar__edge::after 的硬高光与
-     ::before 的弥散光都引用它，改这里两处一起变。
-     要改曲线形状就重算这几站（α = 峰值 × (1 - √(p / 70%))），峰值 0.92 */
+     这是**弥散层**的落点定义：卡片 / 按钮 / 侧栏的 ::before 与
+     .sidebar__edge-heads-glow 都引用它。描边层（::after 的 1px 硬高光与
+     .sidebar__edge-heads）用下面的 --glow-edge-falloff —— 形状完全相同，
+     只有颜色分量不同。
+     颜色取自 --glow-rgb（亮色时段深色光斑、深色时段白色光斑 —— 白光在浅底上
+     看不清，所以要反相）；要改曲线形状就重算这几站（α = 峰值 × (1 - √(p / 70%))），峰值 0.92 */
   --glow-falloff:
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.572) 10%,
-    rgba(255, 255, 255, 0.428) 20%,
-    rgba(255, 255, 255, 0.318) 30%,
-    rgba(255, 255, 255, 0.225) 40%,
-    rgba(255, 255, 255, 0.142) 50%,
-    rgba(255, 255, 255, 0.068) 60%,
-    rgba(255, 255, 255, 0) 70%;
+    rgba(var(--glow-rgb), 0.92) 0%,
+    rgba(var(--glow-rgb), 0.572) 10%,
+    rgba(var(--glow-rgb), 0.428) 20%,
+    rgba(var(--glow-rgb), 0.318) 30%,
+    rgba(var(--glow-rgb), 0.225) 40%,
+    rgba(var(--glow-rgb), 0.142) 50%,
+    rgba(var(--glow-rgb), 0.068) 60%,
+    rgba(var(--glow-rgb), 0) 70%;
+  /* 描边层的同名曲线：与上面只有颜色分量不同。
+     ⚠️ 两份曲线必须**同步修改** —— 它们是同一支光的两个层，形状一旦不一致，
+     描边和光晕会在交界处对不上 */
+  --glow-edge-falloff:
+    rgba(var(--glow-edge-rgb), 0.92) 0%,
+    rgba(var(--glow-edge-rgb), 0.572) 10%,
+    rgba(var(--glow-edge-rgb), 0.428) 20%,
+    rgba(var(--glow-edge-rgb), 0.318) 30%,
+    rgba(var(--glow-edge-rgb), 0.225) 40%,
+    rgba(var(--glow-edge-rgb), 0.142) 50%,
+    rgba(var(--glow-edge-rgb), 0.068) 60%,
+    rgba(var(--glow-edge-rgb), 0) 70%;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --morph: 480ms;
   color-scheme: light;
@@ -363,20 +387,62 @@ button {
   padding: var(--space-lg);
 }
 
+/* 开场幕布：先铺「浏览器默认色」（浅色白 / 深色近黑），随后由 GSAP 淡出，
+   露出本站随本地时间取色的渐变背景 —— 视觉上就是「从浏览器默认背景渐变过来」。
+   z 序：orb-field(0) < 幕布(1) < 内容(2) */
+.welcome__curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: #ffffff;
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .welcome__curtain {
+    background: #121212;
+  }
+}
+
 .welcome__inner {
+  position: relative;
+  z-index: 2;
   display: grid;
   justify-items: center;
   gap: var(--space-lg);
   text-align: center;
-  max-width: 620px;
+  max-width: min(94vw, 780px);
+}
+
+/* 终态一行：logo / 标题 / 登录按钮（按钮内是画出来的「→」）。
+   窄屏放不下时改竖排 —— 横向位移量是 JS 按实测算的，竖排下自然收敛为淡入。
+
+   垂直对齐：顶对齐 + 「行高盒」变量 —— 标题与按钮共用同一个 margin-top
+   （(markSize - titleBox) / 2），于是**按钮上边沿与标题上边沿严格齐平**，
+   同时标题在行内仍近似居中（行高由 logo 的 96px 定），视觉关系不变 */
+.welcome__row {
+  --welcome-mark-size: 96px; /* = .welcome__beam 的边长，也是行的基准高度 */
+  --welcome-title-size: clamp(26px, 5.4vw, 46px);
+  --welcome-title-box: calc(var(--welcome-title-size) * 1.25); /* 标题的行高盒 */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: clamp(12px, 2.2vw, 22px);
 }
 
 .welcome__beam {
-  width: 96px;
-  height: 96px;
+  position: relative;
+  z-index: 3; /* 压在标题之上：标题从它背后「擦」出来 */
+  flex: none;
+  width: var(--welcome-mark-size);
+  height: var(--welcome-mark-size);
   border-radius: 32px;
   background: linear-gradient(140deg, var(--orb-a), var(--orb-b));
-  box-shadow: 0 20px 50px var(--glass-shadow);
+  /* 纵深：近距实影 + 远距柔影两层（比原版更重，浮现时随透明度一起「长」出来） */
+  box-shadow:
+    0 30px 64px var(--glass-shadow),
+    0 8px 22px rgba(15, 23, 42, 0.1);
   display: grid;
   place-items: center;
   font-size: 30px;
@@ -386,8 +452,15 @@ button {
 }
 
 .welcome__title {
-  font-size: clamp(26px, 5.4vw, 46px);
+  position: relative;
+  z-index: 2;
+  font-size: var(--welcome-title-size);
   line-height: 1.25;
+  /* 与按钮共用同一个上边距 —— 让两者的上边沿齐平（见 .welcome__row 的说明） */
+  margin-top: calc((var(--welcome-mark-size) - var(--welcome-title-box)) / 2);
+  /* 初始全裁，由 GSAP 把裁剪边界钉在 logo 右缘逐帧「钻出」（见 Welcome.tsx）；
+     这条同时兜底防首帧闪现 */
+  clip-path: inset(0 0 0 100%);
 }
 
 .welcome__subtitle {
@@ -396,7 +469,65 @@ button {
 }
 
 .welcome__cta {
+  position: relative;
+  z-index: 1; /* 起步时从标题文字（层）下面滑出来 */
   opacity: 0; /* 由 GSAP 接管入场 */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* 按钮里只有箭头（没有文字），内边距比 .btn 的 24px 收窄 —— 太宽会显得空 */
+  padding: 12px 16px;
+  /* 与标题共用同一个上边距 —— 上边沿与标题齐平（见 .welcome__row 的说明） */
+  margin-top: calc((var(--welcome-mark-size) - var(--welcome-title-box)) / 2);
+}
+
+/* 按钮里的「→」是画出来的：横线向右画出、箭头尖从线端张开，
+   两段都用 stroke-dashoffset（初始值写在 SVG 属性上，GSAP 补到 0）。
+   ⚠️ 不要给这两层加 CSS transform / transform-origin 做缩放动画 ——
+   SVG 子元素上的 origin 处理会和 GSAP 打架（实测箭头被平移 (-19,-8) 错位） */
+.welcome__arrow {
+  /* 展示尺寸 = viewBox 的 3×（24×16 → 72×48）：等比放大，描边视觉约 6px。
+     图形已在 viewBox 里居中（见 Welcome.tsx），这里不再做任何位移 */
+  width: 72px;
+  height: 48px;
+  flex: none;
+  display: block;
+  /* 点击后与转圈「交接」：箭头淡出缩入（见下面的 [data-busy] 规则） */
+  transition:
+    opacity 220ms ease,
+    scale 300ms var(--ease-out);
+}
+
+/* 点击后的交接：箭头缩入淡出、转圈原地弹出。
+   转圈用绝对定位叠在箭头中心（见加载态那节）——不占布局，按钮宽度全程不变，
+   不会出现「点击瞬间按钮被撑宽、箭头跳位」的生硬感 */
+.welcome__cta[data-busy] .welcome__arrow {
+  opacity: 0;
+  scale: 0.3;
+}
+
+.welcome__arrow-shaft,
+.welcome__arrow-head {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* 窄屏：一行改竖排（位移动画自动收敛为淡入，见 Welcome.tsx 的测量逻辑） */
+@media (max-width: 720px) {
+  .welcome__row {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+  }
+
+  /* 竖排下「上边沿对齐」没有意义，撤掉对齐用的上边距 */
+  .welcome__title,
+  .welcome__cta {
+    margin-top: 0;
+  }
 }
 
 /* ---------- 登录 / 注册 ---------- */
@@ -609,7 +740,8 @@ button {
      —— 正是光扫到胶囊口被收住的那几个位置。每个头放一个亮点，
      光就变成「沿边走 → 到胶囊口收成一团」，而不是被硬生生截断。
 
-     ⚠️ 渲染**刻意复用光标那两层的配方**（同一条 --glow-falloff 曲线、同一个
+     ⚠️ 渲染**刻意复用光标那两层的配方**（同一组落点曲线 —— 描边用
+     --glow-edge-falloff、弥散用 --glow-falloff，它们只差颜色分量；同一个
      --glow-blur 模糊半径、同一套挖空逻辑），只把门禁从 opacity 换成常亮 ——
      不然两种光会长得不一样：
        · .sidebar__edge-heads       —— 贴着边线的 1px 硬高光（同 ::after）
@@ -633,13 +765,13 @@ button {
     --head-2x: 100%;
     --head-2y: calc(var(--cut-y, 1px) + var(--cut-h, 0px) * var(--head-bottom));
     /* 4 个亮点 = 左右边缘 × 上 / 下两个断点，每个都是一个**虚拟鼠标**：
-       落点曲线、强度与真光标同源（--glow-falloff），半径则是鼠标那层
-       乘 --head-scale —— 缩一半才收得住，不会盖过胶囊本身 */
+       落点曲线、强度与真光标同源（描边 --glow-edge-falloff、弥散 --glow-falloff），
+       半径则是鼠标那层乘 --head-scale —— 缩一半才收得住，不会盖过胶囊本身 */
     background:
-      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-1y), var(--glow-falloff)),
-      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-2y), var(--glow-falloff)),
-      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-1y), var(--glow-falloff)),
-      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-2y), var(--glow-falloff));
+      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-1y), var(--glow-edge-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-2y), var(--glow-edge-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-1y), var(--glow-edge-falloff)),
+      radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-2y), var(--glow-edge-falloff));
     pointer-events: none;
   }
 
@@ -997,7 +1129,7 @@ button {
   padding: 1px;
   background: radial-gradient(
     var(--glow-r) circle at var(--glow-x, 50%) var(--glow-y, 50%),
-    var(--glow-falloff)
+    var(--glow-edge-falloff)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -1362,6 +1494,25 @@ code {
   background: rgba(220, 38, 38, 0.12);
 }
 
+/* ---------- 登录 → 主页的过场 ---------- */
+
+/* 箭头按钮的「幽灵」：从欢迎页克隆、固定定位，飞行中自由变形。
+   ⚠️ 必须禁掉 .btn 自带的 transition —— 否则 GSAP 每帧写的 transform
+   会被过渡平滑成「滞后 + 抖动」 */
+.handoff-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  pointer-events: none;
+  margin: 0 !important;
+}
+
+.handoff-ghost,
+.handoff-ghost * {
+  transition: none !important;
+}
+
 /* ---------- 加载态 ---------- */
 
 .spinner {
@@ -1371,6 +1522,33 @@ code {
   border: 2px solid var(--glass-border);
   border-top-color: var(--accent);
   animation: spin 700ms linear infinite;
+}
+
+/* 欢迎页的转圈：与箭头**交接**出现与退出 —— 绝对定位叠在箭头中心，不占布局，
+   按钮宽度全程不变。常驻 DOM，显隐由 [data-busy] 驱动的过渡完成：
+   进入时弹入（带一点虚化）、退出时缩出 —— 两个方向都有动画 */
+.welcome__cta .spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 22px;
+  height: 22px;
+  animation: spin 700ms linear infinite;
+  opacity: 0;
+  scale: 0.3;
+  filter: blur(6px);
+  transition:
+    opacity 220ms ease,
+    scale 300ms var(--ease-out),
+    filter 300ms ease;
+  pointer-events: none;
+}
+
+.welcome__cta[data-busy] .spinner {
+  opacity: 1;
+  scale: 1;
+  filter: blur(0);
 }
 
 @keyframes spin {

@@ -30,11 +30,20 @@ export const durations = {
   panelEnter: 0.3,
   panelExit: 0.2,
 
-  /** 欢迎页时间轴 */
+  /** 欢迎页时间轴：幕布退场 → logo 浮现 → 三元素分列 → 按钮内箭头绘出 */
+  welcomeCurtain: 0.9,
   welcomeBeam: 1,
-  welcomeChar: 0.65,
-  welcomeCharStagger: 0.035,
-  welcomeCta: 0.55,
+  welcomeShift: 0.85,
+  welcomeDraw: 0.34,
+  welcomeArrow: 0.26,
+
+  /** 登录 → 主页的过场（Handoff）：欢迎页左移出 / 幽灵飞行变形 / 箭头旋转发射 / 按钮弹出 */
+  handoffExit: 0.6,
+  handoffFly: 0.62,
+  handoffSpin: 0.28,
+  handoffLaunch: 0.34,
+  handoffButtons: 0.3,
+  handoffStagger: 0.09,
 
   /** 覆盖层：进入 / 退出 */
   overlayEnter: 0.32,

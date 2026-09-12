@@ -50,6 +50,8 @@ type Props = {
   onThemeAuto: (auto: boolean) => void
   onThemeHour: (hour: number) => void
   onLogout: () => void
+  /** 登录过场进行中：卡片入场让位给过场（见下方 target effect） */
+  handoff?: boolean
 }
 
 /**
@@ -71,6 +73,7 @@ export function MainShell({
   onThemeAuto,
   onThemeHour,
   onLogout,
+  handoff = false,
 }: Props) {
   const [target, setTarget] = useState(0)
 
@@ -83,6 +86,8 @@ export function MainShell({
   const accumulatorRef = useRef(0)
   const trackRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const handoffRef = useRef(handoff)
+  handoffRef.current = handoff
 
   // 内容装不下时改走横向切换；两种模式下 section 几何一致，判定不会来回抖动
   const overflow = useOverflowMode(viewportRef, [target])
@@ -285,6 +290,14 @@ export function MainShell({
 
   // 目标页的卡片入场：波包式，延迟随到波源的距离增长
   useEffect(() => {
+    // 登录过场期间不播卡片入场：过场本身已经足够满，叠上波包会互相踩。
+    // 顺手把「首次幅度」消费掉 —— 过场之后再切页时按正常幅度给
+    if (handoffRef.current) {
+      firstRevealRef.current = false
+      prevTargetRef.current = target
+      return
+    }
+
     const section = trackRef.current?.children[target] as HTMLElement | undefined
     if (!section) return
 

@@ -103,6 +103,8 @@ export const TEXT_SWITCH_LUMINANCE = 128
 export type ThemeTokens = Omit<Anchor, 'hour'> & {
   fg: string
   fgMuted: string
+  /** 背景是否处于深色档（与文字色同一门槛）。供"随明暗反向"的部件消费（如光标光晕） */
+  isDark: boolean
 }
 
 type RGB = [number, number, number]
@@ -158,7 +160,10 @@ export function themeAt(date: Date): ThemeTokens {
   const t = ((hours - from.hour + 24) % 24) / span
 
   const bg1 = mixHex(from.bg1, to.bg1, t)
-  const text = luminance(bg1) >= TEXT_SWITCH_LUMINANCE ? TEXT_ON_LIGHT : TEXT_ON_DARK
+  // 亮暗档位与文字色**同门槛、同判断**：要"随明暗反向"的部件（光标光晕）消费 isDark，
+  // 不要在别处另立一套阈值
+  const isDark = luminance(bg1) < TEXT_SWITCH_LUMINANCE
+  const text = isDark ? TEXT_ON_DARK : TEXT_ON_LIGHT
 
   return {
     // 时段名跟随最接近的锚点，避免插值中途出现"半上午半中午"
@@ -169,6 +174,7 @@ export function themeAt(date: Date): ThemeTokens {
     orbB: mixHex(from.orbB, to.orbB, t),
     accent: mixHex(from.accent, to.accent, t),
     glassAlpha: from.glassAlpha + (to.glassAlpha - from.glassAlpha) * t,
+    isDark,
     ...text,
   }
 }

@@ -24,6 +24,14 @@ export function applyTheme(t: ThemeTokens, now = new Date()) {
   root.setProperty('--glass-2', `rgba(255,255,255,${(t.glassAlpha * 0.55).toFixed(3)})`)
   root.setProperty('--glass-border', `rgba(255,255,255,${Math.min(0.75, t.glassAlpha * 2.6).toFixed(3)})`)
   root.setProperty('--glass-shadow', `rgba(15,23,42,${(0.05 + t.glassAlpha * 0.5).toFixed(3)})`)
+  // 光标光晕随背景明暗**反相**取色，但两层分开：
+  //   · 弥散层（--glow-rgb）：亮色时段深色光斑，深色时段白色 —— 白光在浅底上看不清；
+  //   · 描边层（--glow-edge-rgb）：亮色时段灰白 —— 深色描边太重、纯白又看不见，
+  //     深色时段同样是白色。
+  // 这里只给颜色分量，曲线形状留在 CSS 的 --glow-falloff / --glow-edge-falloff。
+  // 深色分量 15,23,42 与 --glass-shadow 同源；灰白 203,213,225 取自 slate-300
+  root.setProperty('--glow-rgb', t.isDark ? '255, 255, 255' : '15, 23, 42')
+  root.setProperty('--glow-edge-rgb', t.isDark ? '255, 255, 255' : '203, 213, 225')
 
   // 把实际生效的参数写到 DOM 上：便于界面展示，也让"颜色是否连续"可被脚本断言
   document.documentElement.dataset.timeTheme = JSON.stringify({
@@ -31,6 +39,7 @@ export function applyTheme(t: ThemeTokens, now = new Date()) {
     accent: t.accent,
     bg1: t.bg1,
     fg: t.fg,
+    isDark: t.isDark,
     glassAlpha: Number(t.glassAlpha.toFixed(3)),
     at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
   })
