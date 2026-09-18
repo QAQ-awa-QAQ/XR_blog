@@ -117,7 +117,7 @@ Session     Redis: sess:<id> → user_id, TTL 7d 滑动续期
 ## 8. 容器拓扑
 
 ```
-app   ← 唯一暴露端口 8080；内含 nginx:80 + go:127.0.0.1:8081
+app   ← 唯一暴露端口 8088；内含 nginx:80 + go:127.0.0.1:8081
       ← 卷 ./data/blog.db (SQLite WAL)
 redis ← AOF 持久化（永久封禁名单依赖它做计数，名单本身落 SQLite）
 ```
@@ -134,7 +134,7 @@ Nginx 对**每个**请求（含 css/js/图片）走 `auth_request → /api/inter
 > 这条是实测踩出来的：未豁免时 20 次请求里只有前 3 次到达 Go，第 20 次永远是 302。
 
 > ⚠️ 必须设 `absolute_redirect off;`：容器内监听 80、对外映射到其他端口时，
-> Nginx 默认生成的绝对地址会丢掉端口号（跳向 `http://host/banned` 而不是 `http://host:8080/banned`）。
+> Nginx 默认生成的绝对地址会丢掉端口号（跳向 `http://host/banned` 而不是 `http://host:8088/banned`）。
 
 ## 9. 实施进度
 

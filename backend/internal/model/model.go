@@ -5,6 +5,8 @@ import "time"
 const (
 	RoleAdmin = "admin"
 	RoleUser  = "user"
+	// RoleGuest 游客：只读浏览，没有数据库行（身份由 GuestUser 合成）。
+	RoleGuest = "guest"
 )
 
 // 封禁档位：第一次 24h 限时，第二次起永久。
@@ -21,6 +23,12 @@ type User struct {
 	Role         string `gorm:"size:16;not null;default:user"`
 	LastIP       string `gorm:"size:64"`
 	CreatedAt    time.Time
+}
+
+// GuestUser 构造游客的合成身份：没有数据库行，ID 保持 0 这个哨兵值
+// （与会话层的约定一致）。昵称固定为「访客」，避免与真实用户混淆。
+func GuestUser(ip string) *User {
+	return &User{Account: "guest", Nickname: "访客", Role: RoleGuest, LastIP: ip}
 }
 
 type InviteCode struct {

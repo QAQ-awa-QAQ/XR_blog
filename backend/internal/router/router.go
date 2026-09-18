@@ -40,8 +40,10 @@ func New(d Deps) (*gin.Engine, error) {
 	api := r.Group("/api")
 
 	// design.md 4.3：只在这里接受输入，且必须先过限流/封禁闸门。
+	// 游客入口不接输入，但会创建服务端会话，同样纳入限流防刷。
 	api.POST("/auth/register", middleware.IPGuard(d.Guard), d.AuthHandler.Register)
 	api.POST("/auth/login", middleware.IPGuard(d.Guard), d.AuthHandler.Login)
+	api.POST("/auth/guest", middleware.IPGuard(d.Guard), d.AuthHandler.Guest)
 	api.POST("/auth/logout", d.AuthHandler.Logout)
 
 	// 供 Nginx auth_request 调用，仅回环可访问。

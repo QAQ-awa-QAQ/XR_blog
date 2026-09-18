@@ -70,6 +70,27 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.issueSession(c, user)
 }
 
+// Guest 游客入口：无凭据、无用户行，只建立一个只读会话。
+// 路由上同样挂 IPGuard——它会创建服务端会话，必须防脚本狂刷。
+func (h *AuthHandler) Guest(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	sid, err := h.sessions.CreateGuest(ctx)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, "internal_error", "创建会话失败，请稍后再试")
+		return
+	}
+	csrf, err := randomToken()
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, "internal_error", "创建会话失败，请稍后再试")
+		return
+	}
+
+	httpx.SetSession(c, sid, h.cfg.SessionTTL, h.cfg.CookieSecure)
+	httpx.SetCSRF(c, csrf, h.cfg.SessionTTL, h.cfg.CookieSecure)
+	httpx.OK(c, gin.H{"user": toUserDTO(model.GuestUser(c.ClientIP())), "csrfToken": csrf})
+}
+
 func (h *AuthHandler) Logout(c *gin.Context) {
 	if sid, err := c.Cookie(httpx.SessionCookie); err == nil && sid != "" {
 		h.sessions.Destroy(c.Request.Context(), sid)

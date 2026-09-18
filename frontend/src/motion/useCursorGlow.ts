@@ -4,11 +4,12 @@ import { clamp01 } from './math.ts'
 /** 高光可见范围（px）：光标离元素超过这个距离就完全不亮 */
 const GLOW_RADIUS = 210
 
-/** 参与光晕的元素 —— 只给**本身就有可见边界**的元素（玻璃卡片、实心按钮、侧栏面板）。
-    侧栏里那几个按钮是透明无边框的，给它们画边缘光等于凭空长出一圈边框。
+/** 参与光晕的元素 —— 只给**本身就有可见边界**的元素（玻璃卡片、实心按钮、侧栏面板、
+    登录/注册的横边栏轨道）。侧栏里那几个按钮是透明无边框的，给它们画边缘光等于
+    凭空长出一圈边框。
     ⚠️ 这份清单必须与 global.css 里那组 ::after / ::before 选择器**逐个对应** ——
     漏一个，那个元素的两层光就是死的（--glow 永远是 0） */
-const GLOW_SELECTOR = '.feature-card, .stat, .contact__card, .more__card, .btn, .sidebar'
+const GLOW_SELECTOR = '.feature-card, .stat, .contact__card, .more__card, .btn, .sidebar, .auth__rail'
 
 /**
  * 光标「手电筒」式的边缘高光（iOS 26 Liquid Glass 里的 specular 高光）。

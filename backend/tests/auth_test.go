@@ -217,6 +217,33 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
+// 游客会话的哨兵：CreateGuest 的会话解析为 (0, true)，
+// 与“无效会话”的 (0, false) 区分开；同样支持续期与销毁。
+func TestGuestSessionSentinel(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	sid, err := e.Sessions.CreateGuest(ctx)
+	if err != nil {
+		t.Fatalf("创建游客会话失败: %v", err)
+	}
+
+	userID, ok := e.Sessions.UserID(ctx, sid)
+	if !ok || userID != 0 {
+		t.Fatalf("游客会话应解析为 (0,true)，实际 (%d,%v)", userID, ok)
+	}
+
+	e.Sessions.Touch(ctx, sid)
+	if ttl := e.RDBC.TTL(ctx, "sess:"+sid).Val(); ttl <= 0 {
+		t.Fatalf("续期后 TTL 应大于 0，实际 %v", ttl)
+	}
+
+	e.Sessions.Destroy(ctx, sid)
+	if _, ok := e.Sessions.UserID(ctx, sid); ok {
+		t.Fatal("销毁后游客会话不应再有效")
+	}
+}
+
 // 冷启动：管理员只创建一次，且不会覆盖已存在的账号。
 func TestEnsureAdminCreatesOnce(t *testing.T) {
 	e := newEnv(t)

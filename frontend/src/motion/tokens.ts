@@ -14,6 +14,11 @@ export const durations = {
       所以 MainShell 里另配了亚像素吸附，消掉指数收尾的拖尾 */
   pageSettle: 0.5,
 
+  /** 登录 / 注册面板的横向平移（卡片内约一屏宽的位移，见 Auth.tsx）。
+      位移量只有整屏切换的三分之一左右，跟整屏同速会显得拖（实测反馈「太慢」），
+      收紧一档：0.5 → 0.32（ω ≈ 12.5） */
+  authSlide: 0.32,
+
   /** 卡片入场：波包式错开 + 弹性收尾，所以给得比别的长 */
   cardReveal: 0.8,
 
@@ -45,6 +50,15 @@ export const durations = {
   handoffButtons: 0.3,
   handoffStagger: 0.09,
 
+  /** 「欢迎页 → 登录页」的过场（AuthIntro）：
+      文案淡出 / XR 放大居中 / 箭头左移 / 副箭头影子浮现与显影 / 卡片淡入 / 右移带按钮 */
+  authIntroFade: 0.4,
+  authIntroBeam: 0.45,
+  authIntroLeft: 0.4,
+  authIntroShadow: 0.3,
+  authIntroCard: 0.5,
+  authIntroCarry: 0.6,
+
   /** 覆盖层：进入 / 退出 */
   overlayEnter: 0.32,
   overlayExit: 0.22,
@@ -53,7 +67,13 @@ export const durations = {
 /** 临界阻尼角频率，供 springStep 使用 */
 export const omega = {
   page: omegaForSettle(durations.pageSettle),
+  /** 登录页面板平移（Auth.tsx 的 progress 弹簧）；高度弹簧仍用 page */
+  authSlide: omegaForSettle(durations.authSlide),
 } as const
+
+/** 「转圈 → 箭头」交接播完再启动过场的等待（ms）。
+    欢迎页与登录页共用：按钮都要先把 spinner 交接回箭头，幽灵才克隆得到「→」 */
+export const HANDOFF_LEAD_MS = 300
 
 export const easings = {
   /** 慢出慢停、无速度突变——玻璃／水滴质感首选。

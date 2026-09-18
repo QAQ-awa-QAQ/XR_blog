@@ -154,6 +154,12 @@ test('时间分档：数值合法且与 ω 换算一致', () => {
   // 顺手锁定整屏切换的刚度：防止无意间改动「翻页手感」。
   // 0.5s → ω = 8（原为 0.67s → 6，按实测手感调快后同步更新）
   assert.ok(omega.page > 7.5 && omega.page < 8.5, `ω 应在 8 附近，实际 ${omega.page}`)
+
+  assert.ok(Math.abs(omega.authSlide - omegaForSettle(durations.authSlide)) < 1e-9)
+  // 登录页平移必须**快于**整屏切换（实测反馈「太慢」后收紧的手感），
+  // 但也不能快到像闪烁
+  assert.ok(omega.authSlide > omega.page, `平移应快于整页切换，实际 ${omega.authSlide}`)
+  assert.ok(omega.authSlide < 16, `平移不应快到闪烁，实际 ${omega.authSlide}`)
 })
 
 /**

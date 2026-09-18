@@ -29,6 +29,15 @@ func RequireAuth(auth *service.Auth, sessions *service.Sessions, secure bool) gi
 			return
 		}
 
+		// 游客会话（哨兵 0）：注入合成身份，不查库。
+		// 它没有 admin 角色，管理接口由 RequireAdmin 兜底拒绝。
+		if userID == 0 {
+			sessions.Touch(ctx, sid)
+			c.Set(httpx.CtxUserKey, model.GuestUser(c.ClientIP()))
+			c.Next()
+			return
+		}
+
 		user, err := auth.FindByID(ctx, userID)
 		if err != nil {
 			sessions.Destroy(ctx, sid)

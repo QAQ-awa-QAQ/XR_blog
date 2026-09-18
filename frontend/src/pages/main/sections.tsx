@@ -161,6 +161,13 @@ export function ContactSection() {
   )
 }
 
+/** 角色说明文案（「更多」页账户卡的第二行） */
+const ROLE_HINTS: Record<User['role'], string> = {
+  admin: '管理员：可进入后台管理内容',
+  guest: '访客模式（只读）：注册后可获得完整账户',
+  user: '普通用户',
+}
+
 /** 「更多」页：站名、当前账户、主题设置，以及两个动作（设计稿里“其他信息”的安置处） */
 export function MoreSection({
   user,
@@ -204,9 +211,7 @@ export function MoreSection({
               {themeLabel} · {user.nickname}
             </span>
           </span>
-          <span className="field__hint">
-            {user.role === 'admin' ? '管理员：可进入后台管理内容' : '普通用户'}
-          </span>
+          <span className="field__hint">{ROLE_HINTS[user.role]}</span>
         </div>
 
         <div className="glass more__card more__settings" data-reveal>
@@ -256,7 +261,7 @@ export function MoreSection({
           </a>
         ) : null}
         <button type="button" className="btn btn--ghost" onClick={onLogout}>
-          退出登录
+          {user.role === 'guest' ? '退出访客模式' : '退出登录'}
         </button>
       </div>
     </div>

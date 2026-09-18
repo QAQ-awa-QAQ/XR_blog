@@ -2,27 +2,36 @@ import { useLayoutEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { durations, easings } from '../motion/tokens'
 
+/** 过场来源：欢迎页箭头 / 登录页的三个提交按钮（对应按钮的 data-cta 值） */
+export type HandoffFrom = 'welcome' | 'login-submit' | 'register-submit' | 'login-guest'
+
 /**
- * 登录成功后的过场编排（不渲染任何 UI，由 App 在 handoff 期间挂载）。
+ * 进入主页的过场编排（不渲染任何 UI，由 App 在 handoff 期间挂载）。
  *
- * 序列（点击箭头、转圈完整展出之后）：
- *   1. 欢迎页内容整体**左移出屏**（欢迎页的光斑同时淡出）；
- *   2. 箭头按钮的「幽灵」（克隆体）从原位飞向侧栏「首页」按钮的位置，
- *      同时变形：玻璃壳收缩到按钮规格、箭头等比缩小；
+ * 来源有两处，流程完全同构，只有「出场页」与「被克隆的按钮」不同：
+ *   · welcome —— 欢迎页的箭头按钮
+ *   · login-submit / register-submit / login-guest —— 登录页的三个提交按钮
+ *
+ * 序列（转圈交接回箭头、完整展出之后）：
+ *   1. 出场页内容整体**左移出屏**（光斑同时淡出）；
+ *   2. 按钮的「幽灵」（克隆体）从原位飞向侧栏「首页」按钮的位置，
+ *      同时变形：壳收缩到按钮规格、箭头等比缩小；
  *   3. 落位后箭头**旋转**朝向下一个按钮的排列方向（桌面 ↓ / 手机 →）；
  *   4. 箭头沿该方向**发射**飞出并淡出 —— 期间侧栏按钮依次弹出（带回一次光晕脉冲），
  *      指示条与首页按钮同时现身；
- *   5. 完成后回调 onDone，App 撤掉欢迎页。
+ *   5. 完成后回调 onDone，App 撤掉出场页。
  *
- * 为什么用克隆体：飞行体要脱离欢迎页的布局（fixed + 独立尺寸动画），
+ * 为什么用克隆体：飞行体要脱离原布局（fixed + 独立尺寸动画），
  * 而 React 不欢迎外部 DOM 移动它管理的节点。克隆是"只退不进"的一次性演出件，
  * 结束时移除即可。
  *
  * ⚠️ 只有「指示条」用 style.visibility 手工藏 —— 它的 opacity 由 Sidebar 的
  * placePill 管理（那个 effect 晚于这里的 useLayoutEffect 执行），
  * 用 GSAP 设 opacity 会被它随后覆盖。按钮们没有这个顾虑，直接用 autoAlpha。
+ * ⚠️ 登录页按钮的文案（.auth__cta-label）不参与飞行，克隆后立刻删除：
+ *    394px 宽的胶囊要收成 68px 的侧栏按钮，文字折行会穿帮。
  */
-export function Handoff({ onDone }: { onDone: () => void }) {
+export function Handoff({ from, onDone }: { from: HandoffFrom; onDone: () => void }) {
   const firedRef = useRef(false)
   // 只挂载时演出一次：onDone 经 ref 取用，避免 App 重渲染（主题每分钟 tick）
   // 传入新函数导致 effect 重跑、过场重演
@@ -39,10 +48,17 @@ export function Handoff({ onDone }: { onDone: () => void }) {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const btns = gsap.utils.toArray<HTMLElement>('.sidebar__btn')
     const pill = document.querySelector<HTMLElement>('.sidebar__pill')
-    const source = document.querySelector<HTMLElement>('.welcome__cta')
-    const inner = document.querySelector<HTMLElement>('.welcome__inner')
-    const welcome = document.querySelector<HTMLElement>('.welcome')
-    const welcomeOrbs = document.querySelector<HTMLElement>('.welcome .orb-field')
+    // 出场页三件套：整页层（要被提出文档流）、要左移出的内容、要淡出的光斑
+    const layers =
+      from === 'welcome'
+        ? { stage: '.welcome', inner: '.welcome__inner', orbs: '.welcome .orb-field' }
+        : { stage: '.auth', inner: '.auth__card', orbs: '.auth .orb-field' }
+    const source = document.querySelector<HTMLElement>(
+      from === 'welcome' ? '.welcome__cta' : `[data-cta="${from}"]`,
+    )
+    const inner = document.querySelector<HTMLElement>(layers.inner)
+    const exitStage = document.querySelector<HTMLElement>(layers.stage)
+    const welcomeOrbs = document.querySelector<HTMLElement>(layers.orbs)
 
     // 结构不对（或用户要求减弱动效）：不演出，直接收尾
     if (reduce || !source || !inner || btns.length === 0) {
@@ -58,18 +74,18 @@ export function Handoff({ onDone }: { onDone: () => void }) {
       .map((sel) => document.querySelector<HTMLElement>(sel))
       .filter((el): el is HTMLElement => el !== null)
 
-    // ⚠️ 必须先把欢迎页从文档流里「取出来」再做任何测量：
+    // ⚠️ 必须先把出场页从文档流里「取出来」再做任何测量：
     // 它和主页面都是 height:100% 的块，同时在场时会**上下堆叠**（主页面被推到
     // 下一屏），幽灵的测量目标会整体偏移一屏 —— 表现是"箭头往左下飞走"。
     // 设为 absolute + inset 0 后两层重叠在同一屏，视觉不变。
-    if (welcome) {
-      gsap.set(welcome, {
+    if (exitStage) {
+      gsap.set(exitStage, {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 5, // 欢迎页要「划过」主页面之上
+        zIndex: 5, // 出场页要「划过」主页面之上
         pointerEvents: 'none', // 演出期间不接受点击
       })
     }
@@ -83,6 +99,8 @@ export function Handoff({ onDone }: { onDone: () => void }) {
     // ---- 准备：造幽灵、隐藏原件 ----（都在首帧绘制前完成，不会闪）
     const ghost = source.cloneNode(true) as HTMLElement
     ghost.classList.add('handoff-ghost')
+    // 登录页按钮的文字不参与飞行（见头部注释）
+    ghost.querySelector('.auth__cta-label')?.remove()
     const ghostSvg = ghost.querySelector('svg')
     document.body.appendChild(ghost)
     gsap.set(ghost, {
@@ -114,7 +132,7 @@ export function Handoff({ onDone }: { onDone: () => void }) {
 
     const tl = gsap.timeline({ onComplete: finish })
 
-    // 1) 欢迎页内容整体左移出屏（按屏宽给足距离，不被元素自身宽度卡住）
+    // 1) 出场页内容整体左移出屏（按屏宽给足距离，不被元素自身宽度卡住）
     tl.to(
       inner,
       {

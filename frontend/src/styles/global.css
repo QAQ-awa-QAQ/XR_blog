@@ -546,19 +546,215 @@ button {
   padding: var(--space-xl);
   display: grid;
   gap: var(--space-md);
+  /* 锚顶伸缩：高度变化时由 Auth 的 rAF 写 relative top 补偿，
+     让卡片顶边不动、切换栏位置稳定 */
+  position: relative;
 }
 
+/* 「舞台」：登录 / 注册面板的裁剪窗口，高度由 Auth 的弹簧逐帧写
+   （大底框随之向下伸 / 向上缩）。
+   裁剪口（padding box）四周还要外扩 --stage-bleed：按钮的弥散光晕与投影
+   会向元素外扩散 ~13px，不外扩就会被窗口边缘切成直线（实测：登录 / 访客
+   按钮的光晕三面贴边被裁，像被一个“div”截断）。padding 收窄内容区、
+   负 margin 再把盒子撑回原占位 —— 内容尺寸与布局位置都不变，只有
+   “允许显示”的范围变大 */
+.auth__stage {
+  overflow: hidden;
+  --stage-bleed: 26px;
+  padding: var(--stage-bleed);
+  margin: calc(var(--stage-bleed) * -1);
+  /* 外扩区会伸进 tabs / footer 的间隙，别让窗口挡住它们的点击（内容层恢复） */
+  pointer-events: none;
+}
+
+/* 「轨道」：两块面板并排，整条横向平移（弹簧写 transform）。
+   gap 是**两块正文之间的间隔**：切换途中旧文与新文擦肩时必须留出空档，
+   否则两条内容会贴在一起（用户点名的“间距太小”）。
+   ⚠️ gap 必须 ≥ --stage-bleed（窗口单侧外扩量）：窗口看出去最多只能
+   看到 gap 区，再小就会露出另一块面板的边缘 */
+.auth__track {
+  display: flex;
+  /* 不拉伸：两块面板各自保持自然高度，便于测量 */
+  align-items: flex-start;
+  will-change: transform;
+  gap: 36px;
+  pointer-events: auto;
+}
+
+/* 「面板」：各占舞台一屏宽；内部排版沿用卡片的网格节奏 */
+.auth__panel {
+  flex: 0 0 100%;
+  display: grid;
+  gap: var(--space-md);
+}
+
+/* 「登录 / 注册」切换 = 一条**横边栏**（完整照搬侧栏手机版那一套）：
+   隐形轨道 + 玻璃胶囊 + 被胶囊挖洞的假边线 + 4 个常亮光点 + 光标光晕。
+   几何口径照抄手机版实测值：胶囊上下各溢出轨道 3.85px、首尾顶出 7.34px */
 .auth__tabs {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-xs);
-  padding: 4px;
+  /* 间距与边栏手机版一致 */
+  gap: var(--space-sm);
+  /* 轨道本体**完全隐形**（同 .sidebar）：不画底色 / 边框 / 模糊 / 投影 */
   border-radius: 999px;
-  background: var(--glass-2);
-  border: 1px solid var(--glass-border);
+  border: none;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  overflow: visible;
+  /* 光点口径照搬手机版（轨道小，半径收一半再收一半） */
+  --head-scale: 0.25;
+  /* ⚠️ 半径必须在本元素上重算：var() 在声明它的元素上求值，
+     直接继承 :root 那份的话会被冻成「桌面 0.5 档」 */
+  --head-r: calc(var(--glow-r) * var(--head-scale));
+  --head-r-glow: calc(var(--glow-r-glow) * var(--head-scale));
+  /* 两端「头」距胶囊端部的距离：由 r = 20（胶囊高 40 的半圆）、
+     ov = 3.85 推 —— r - √(r² - (r - ov)²) = 8.2px。
+     用固定距离而不是比例：胶囊宽度随卡片变，比例会跟着漂 */
+  --head-inset: 8.2px;
+  /* 胶囊对轨道的溢出（照抄手机版实测值） */
+  --rail-inset-y: 3.85px;
+  --rail-inset-x: 7.34px;
+}
+
+/* 「轨道」矩形：壳与洞的基准（同 .sidebar 之于 .sidebar__edge）。
+   胶囊把它上下各盖住 3.85px、首尾各顶出 7.34px，--cut-* 由 Auth 写在这里 */
+.auth__rail {
+  position: absolute;
+  inset: var(--rail-inset-y) var(--rail-inset-x);
+  border-radius: inherit;
+  pointer-events: none;
+  /* 洞的默认值（0×0 = 不挖；测量在卡片入场前完成，不会闪）。
+     ⚠️ 必须声明在 rail 上而不是 edge 上 —— 洞的真实形状由 Auth 用
+     inline style 写在 rail 上，而**元素自身的声明会屏蔽从父级继承的值**：
+     写在 edge 上会让 JS 写的东西永远失效（实测：红底实验里洞完全不生效） */
+  --hole: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='0' height='0' preserveAspectRatio='none'%3E%3Crect width='0' height='0' fill='%23fff'/%3E%3C/svg%3E");
+}
+
+/* 壳：照搬 .sidebar__edge —— 承载「被胶囊挖洞」的假边线与光标光晕。
+   洞的位置 / 尺寸由 Auth 用 GSAP 同步写在 --cut-* 上（与指示条同源）;
+   默认 --cut-w/h 为 0 => 洞不存在，不会首帧闪一下 */
+.auth__edge {
+  display: block;
+  position: absolute;
+  /* 壳比轨道大一圈（pad），让**它自己的 border box** 能容下向外扩散的光晕 */
+  inset: calc(var(--glow-pad) * -1);
+  border-radius: inherit;
+  pointer-events: none;
+  /* 洞 = 一个「圆角矩形」——形状由 Auth 用 JS **按当前尺寸现算**后写进 --hole
+     （写在 .auth__rail 上，这里只引用；默认 0×0 在 rail 的规则里）：
+     viewBox / rect 直接用「洞的真实像素尺寸 ∧ 圆角 = 洞高的一半」，
+     与 mask-size 的拉伸比恰好 1:1 —— 屏幕上就是一颗无缝胶囊（两个正圆 + 两条直线）。
+     ⚠️ 为什么不写死一个 SVG：`preserveAspectRatio='none'` 会把圆角按「宽、高各自」
+     拉伸 —— 静态 rx 无论如何取值，端部都会变成横扁的椭圆角（rx 实际 = 洞宽的一半，
+     约 97px），洞会多挖掉一大片。⚠️ 也不用「两个圆 + 矩形」拼接：三件之间是
+     抗锯齿的亚像素接缝，构不成无缝胶囊。 */
+  /* 洞比胶囊**每边外扩 1px** */
+  --hole-pad: 1px;
+  -webkit-mask-image: linear-gradient(#000 0 0), var(--hole);
+  mask-image: linear-gradient(#000 0 0), var(--hole);
+  /* 第一层是「保留层」= 壳自己的盒子；第二层是洞，钉在胶囊上 */
+  -webkit-mask-size:
+    100% 100%,
+    calc(var(--cut-w, -2px) + var(--hole-pad) * 2) calc(var(--cut-h, -2px) + var(--hole-pad) * 2);
+  mask-size:
+    100% 100%,
+    calc(var(--cut-w, -2px) + var(--hole-pad) * 2) calc(var(--cut-h, -2px) + var(--hole-pad) * 2);
+  -webkit-mask-position:
+    0 0,
+    calc(var(--cut-x, 1px) - var(--hole-pad) + var(--glow-pad))
+      calc(var(--cut-y, 1px) - var(--hole-pad) + var(--glow-pad));
+  mask-position:
+    0 0,
+    calc(var(--cut-x, 1px) - var(--hole-pad) + var(--glow-pad))
+      calc(var(--cut-y, 1px) - var(--hole-pad) + var(--glow-pad));
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  /* 第一层减去第二层 —— 即「轨道轮廓」减去「胶囊」 */
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* 假边线的「头」：4 个固定亮点（照搬 .sidebar__edge-heads / -glow）。
+   轨道的上下边线被胶囊挖洞后各剩两段，共 4 个断头 —— 每个头一个光点，
+   光就变成「沿边走 → 到胶囊口收成一团」。
+   ⚠️ 坐标必须声明在**这里**（而不是 :root）—— 它们引用 --cut-*，
+   而自定义属性里的 var() 是在声明它的元素上求值的 */
+.auth__edge-heads,
+.auth__edge-heads-glow {
+  position: absolute;
+  border-radius: inherit;
+  /* 横向条（照搬手机版的映射）：两个「头」从上下边线沿横轴分布，
+     横坐标钉在胶囊两端的半圆口上（由 --cut-* + --head-inset 现算） */
+  --head-1x: calc(var(--cut-x, 1px) + var(--head-inset, 8.2px));
+  --head-1y: 0px;
+  --head-2x: calc(var(--cut-x, 1px) + var(--cut-w, 0px) - var(--head-inset, 8.2px));
+  --head-2y: 100%;
+  background:
+    radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-1y), var(--glow-edge-falloff)),
+    radial-gradient(var(--head-r) circle at var(--head-1x) var(--head-2y), var(--glow-edge-falloff)),
+    radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-1y), var(--glow-edge-falloff)),
+    radial-gradient(var(--head-r) circle at var(--head-2x) var(--head-2y), var(--glow-edge-falloff));
+  pointer-events: none;
+}
+
+/* 硬高光：盒子落在轨道上，padding 1px => 挖空后只剩贴着边线的那 1px */
+.auth__edge-heads {
+  inset: var(--glow-pad);
+  padding: 1px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* 弥散光：盒子 = 整个壳、content box 退回轨道 => 挖空后只剩「轨道以外」 */
+.auth__edge-heads-glow {
+  inset: 0;
+  padding: var(--glow-pad);
+  background-origin: content-box;
+  background-clip: content-box;
+  background-image:
+    radial-gradient(var(--head-r-glow) circle at var(--head-1x) var(--head-1y), var(--glow-falloff)),
+    radial-gradient(var(--head-r-glow) circle at var(--head-1x) var(--head-2y), var(--glow-falloff)),
+    radial-gradient(var(--head-r-glow) circle at var(--head-2x) var(--head-1y), var(--glow-falloff)),
+    radial-gradient(var(--head-r-glow) circle at var(--head-2x) var(--head-2y), var(--glow-falloff));
+  filter: blur(var(--glow-blur));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* 选中胶囊：完整照搬 .sidebar__pill —— 白膜加倍 + 手工四层光（不加 backdrop-filter，
+   它背后就是卡片，再采一次样会在胶囊里透出卡片的框）。首帧前 opacity: 0，
+   防落在 (0,0) 闪一下；位置尺寸由 Auth 用 GSAP 写在 x/y/w/h 上 */
+.auth__tab-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(155deg, var(--glass-1), var(--glass-2)),
+    linear-gradient(155deg, var(--glass-1), var(--glass-2));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -10px 18px -12px rgba(255, 255, 255, 0.8),
+    0 8px 20px var(--glass-shadow),
+    0 0 22px -4px var(--accent-soft);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .auth__tab {
+  /* 压住指示条 / 假边线的绘制层，文字与命中区在它们之上 */
+  position: relative;
   min-height: 40px;
   border: none;
   border-radius: 999px;
@@ -566,12 +762,16 @@ button {
   color: var(--fg-muted);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 200ms ease, color 200ms ease;
+  /* 只留文字颜色的短过渡；位置感完全交给指示条（与侧栏同一口径） */
+  transition: color 220ms ease;
+}
+
+.auth__tab:hover {
+  color: var(--fg);
 }
 
 .auth__tab[aria-selected='true'] {
-  background: var(--accent);
-  color: #fff;
+  color: var(--fg);
 }
 
 .auth__title {
@@ -587,6 +787,62 @@ button {
   font-size: 13px;
   color: var(--fg-muted);
   text-align: center;
+}
+
+/* 提交按钮里的「→」与转圈的交接（与欢迎页 .welcome__cta 同一套语言）：
+   箭头常驻、点击后淡出缩入，转圈叠在槽位中心软弹入 —— 双向过渡。
+   槽位固定宽高，spinner 不占额外布局 => 按钮宽度全程不变 */
+.auth__cta-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 19px;
+  flex: none;
+}
+
+.auth__arrow {
+  grid-area: 1 / 1;
+  width: 28px;
+  height: 19px;
+  display: block;
+  transition:
+    opacity 220ms ease,
+    scale 300ms var(--ease-out);
+}
+
+.auth__cta[data-busy] .auth__arrow {
+  opacity: 0;
+  scale: 0.3;
+}
+
+.auth__arrow-shaft,
+.auth__arrow-head {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* 转圈：与箭头同格叠放（不占布局） */
+.auth__cta .auth__spinner {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  scale: 0.3;
+  filter: blur(6px);
+  transition:
+    opacity 220ms ease,
+    scale 300ms var(--ease-out),
+    filter 300ms ease;
+}
+
+.auth__cta[data-busy] .auth__spinner {
+  opacity: 1;
+  scale: 1;
+  filter: blur(0);
 }
 
 /* ---------- 主页面：整屏滚轮切换 ---------- */
@@ -1122,7 +1378,8 @@ button {
 .more__card::after,
 .btn::after,
 .sidebar::after,
-.sidebar__edge::after {
+.sidebar__edge::after,
+.auth__edge::after {
   content: '';
   position: absolute;
   border-radius: inherit;
@@ -1169,7 +1426,8 @@ button {
 .more__card::before,
 .btn::before,
 .sidebar::before,
-.sidebar__edge::before {
+.sidebar__edge::before,
+.auth__edge::before {
   content: '';
   position: absolute;
   border-radius: inherit;
@@ -1228,6 +1486,16 @@ button {
 }
 
 .sidebar__edge::before {
+  inset: 0;
+  padding: var(--glow-pad);
+}
+
+/* 横边栏版（登录 / 注册）：同一条口径 */
+.auth__edge::after {
+  inset: var(--glow-pad);
+}
+
+.auth__edge::before {
   inset: 0;
   padding: var(--glow-pad);
 }
@@ -1511,6 +1779,20 @@ code {
 .handoff-ghost,
 .handoff-ghost * {
   transition: none !important;
+}
+
+/* 「欢迎页 → 登录页」过场的箭头幽灵（从 .welcome__cta 的箭头克隆）。
+   ⚠️ color 要钉住：脱离原按钮后 currentColor 会跟着 body 走；
+   ⚠️ transition 也要禁掉 —— 克隆体自带 .welcome__arrow 的过渡规则 */
+.auth-intro-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  pointer-events: none;
+  margin: 0 !important;
+  transition: none !important;
+  color: var(--fg);
 }
 
 /* ---------- 加载态 ---------- */

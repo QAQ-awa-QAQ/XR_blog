@@ -139,6 +139,45 @@ func TestHTTPSessionFlow(t *testing.T) {
 	}
 }
 
+// 游客入口：建立只读会话 → session 能查到（角色 guest）→ 进不了管理接口 → 登出即失效。
+func TestHTTPGuestFlow(t *testing.T) {
+	e := newEnv(t)
+	engine := e.newRouter(t)
+	const ip = "198.51.100.30"
+
+	rec := call(t, engine, http.MethodPost, "/api/auth/guest", ip, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("游客入口应成功，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	session := findCookie(t, rec, httpx.SessionCookie)
+	if !session.HttpOnly {
+		t.Fatal("会话 Cookie 必须是 HttpOnly")
+	}
+	if role := decode(t, rec)["user"].(map[string]any)["role"]; role != "guest" {
+		t.Fatalf("应以游客角色返回，实际 %v", role)
+	}
+
+	rec = call(t, engine, http.MethodGet, "/api/auth/session", ip, nil, withCookie(session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("游客会话查询应成功，实际 %d", rec.Code)
+	}
+
+	// 游客不是 admin，管理接口必须拒绝
+	rec = call(t, engine, http.MethodGet, "/api/admin/users", ip, nil, withCookie(session))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("游客访问管理接口应 403，实际 %d", rec.Code)
+	}
+
+	rec = call(t, engine, http.MethodPost, "/api/auth/logout", ip, nil, withCookie(session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("游客登出应成功，实际 %d", rec.Code)
+	}
+	rec = call(t, engine, http.MethodGet, "/api/auth/session", ip, nil, withCookie(session))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("登出后游客会话应立即失效，实际 %d", rec.Code)
+	}
+}
+
 // 未登录访问受保护接口应返回 401。
 func TestHTTPMeRequiresSession(t *testing.T) {
 	e := newEnv(t)

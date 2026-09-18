@@ -224,7 +224,10 @@ export function Welcome({ onEnter, busy }: Props) {
             aria-label="登录"
             data-busy={busy || undefined}
             onClick={(event) => {
+              // 先让入场时间轴落位（等同「点击任意处跳过」）：保证里的箭头是画完的
+              // 完整态 —— 后面的「欢迎页 → 登录页」过场会克隆它（否则会克隆到画一半的箭头）
               event.stopPropagation()
+              skip()
               onEnter()
             }}
           >

@@ -2,7 +2,8 @@ export type User = {
   id: number
   account: string
   nickname: string
-  role: 'admin' | 'user'
+  /** guest = 游客：只读浏览，没有真实账户 */
+  role: 'admin' | 'user' | 'guest'
   ip: string
 }
 
@@ -87,6 +88,8 @@ export const api = {
     request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ account, password }) }),
   register: (payload: { account: string; password: string; nickname: string; inviteCode: string }) =>
     request<AuthResult>('/api/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
+  /** 访客登录：无凭据，直接建立只读会话 */
+  guest: () => request<AuthResult>('/api/auth/guest', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
   admin: {
