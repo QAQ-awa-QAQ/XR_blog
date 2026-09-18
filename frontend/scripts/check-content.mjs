@@ -7,7 +7,6 @@ import { SITE } from '../src/content/site.ts'
  * 规则只覆盖可机械判定的部分（结构、长度上限、链接形态），不评判文笔。
  */
 
-const ICONS = ['terminal', 'chart', 'cloud', 'shield', 'book', 'wrench']
 const FORBIDDEN = [/lorem/i, /TODO/, /XXX/, /待填/, /占位符/]
 
 const sections = [
@@ -36,16 +35,6 @@ test('数据卡片非空且字段完整', () => {
   assert.ok(SITE.intro.stats.length > 0, '简介页至少一个数据卡片')
   for (const stat of SITE.intro.stats) {
     assert.ok(stat.value.trim().length > 0 && stat.label.trim().length > 0)
-  }
-})
-
-test('功能入口字段合法', () => {
-  assert.ok(SITE.features.items.length > 0)
-  for (const item of SITE.features.items) {
-    assert.ok(ICONS.includes(item.icon), `未知图标 ${item.icon}`)
-    assert.ok(item.title.length > 0 && item.title.length <= 12, `标题过长：${item.title}`)
-    assert.ok(item.desc.length > 0 && item.desc.length <= 40, `描述过长：${item.desc}`)
-    assert.ok(item.tag.length > 0 && item.tag.length <= 6, `标签过长：${item.tag}`)
   }
 })
 

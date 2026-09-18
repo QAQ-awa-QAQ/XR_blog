@@ -38,6 +38,8 @@ func main() {
 	auth := service.NewAuth(db, sessions)
 	invite := service.NewInvite(db, cfg.InviteTTL)
 	guard := service.NewGuard(rdb, db, cfg)
+	access := service.NewAccess(db)
+	features := service.NewFeatures(db)
 
 	generated, created, err := auth.EnsureAdmin(ctx, cfg.AdminAccount, cfg.AdminPassword)
 	if err != nil {
@@ -51,13 +53,22 @@ func main() {
 		}
 	}
 
+	// 首次启动播种功能入口（之后一切由管理后台维护）
+	if err := features.EnsureDefaults(ctx); err != nil {
+		log.Fatalf("初始化功能入口失败: %v", err)
+	}
+
 	engine, err := router.New(router.Deps{
-		Config:       cfg,
-		Auth:         auth,
-		Sessions:     sessions,
-		Guard:        guard,
-		AuthHandler:  handler.NewAuthHandler(auth, sessions, cfg),
-		AdminHandler: handler.NewAdminHandler(invite, guard, auth),
+		Config:         cfg,
+		Auth:           auth,
+		Sessions:       sessions,
+		Guard:          guard,
+		Access:         access,
+		Features:       features,
+		AuthHandler:    handler.NewAuthHandler(auth, sessions, cfg),
+		AdminHandler:   handler.NewAdminHandler(invite, guard, auth),
+		AccessHandler:  handler.NewAccessAdminHandler(access),
+		FeatureHandler: handler.NewFeatureAdminHandler(features),
 	})
 	if err != nil {
 		log.Fatalf("初始化路由失败: %v", err)

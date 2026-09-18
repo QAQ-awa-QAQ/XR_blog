@@ -45,8 +45,21 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(8)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	if err := db.AutoMigrate(&model.User{}, &model.InviteCode{}, &model.BanRecord{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.InviteCode{},
+		&model.BanRecord{},
+		&model.Group{},
+		&model.GroupFeature{},
+		&model.UserGroup{},
+		&model.Feature{},
+	); err != nil {
 		return nil, fmt.Errorf("建表失败: %w", err)
+	}
+
+	// 兼容旧数据：邀请码从「一次性」升级为「可多次」——历史已用过的折算为 1 次
+	if err := db.Exec("UPDATE invite_codes SET used_count = 1 WHERE used_at IS NOT NULL AND used_count = 0").Error; err != nil {
+		return nil, fmt.Errorf("回填邀请码用量失败: %w", err)
 	}
 	return db, nil
 }

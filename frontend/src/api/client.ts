@@ -17,9 +17,26 @@ export type Invite = {
   code: string
   createdBy: number
   usedBy: number | null
+  maxUses: number
+  usedCount: number
   status: 'available' | 'used' | 'expired'
   expiresAt: string
   createdAt: string
+}
+
+/** 功能入口的公开字段（不含内网地址） */
+export type Feature = {
+  key: string
+  title: string
+  desc: string
+  tag: string
+  icon: string
+}
+
+/** 管理端视图：额外带内网地址与排序 */
+export type AdminFeature = Feature & {
+  url: string
+  sort: number
 }
 
 export type Ban = {
@@ -30,6 +47,16 @@ export type Ban = {
   expiresAt: string | null
   reason: string
   updatedAt: string
+}
+
+/** 用户组：后台按组给功能入口授权 */
+export type GroupView = {
+  id: number
+  name: string
+  /** 该组可查看的功能 key 集合 */
+  features: string[]
+  /** 成员用户 ID */
+  members: number[]
 }
 
 /** 与后端 httpx.Fail 的响应体保持一致 */
@@ -92,9 +119,21 @@ export const api = {
   guest: () => request<AuthResult>('/api/auth/guest', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
+  /** 功能入口点击：后端按用户组鉴权后才下发内网地址（游客一律 403） */
+  access: {
+    openFeature: (key: string) =>
+      request<{ url: string }>(`/api/features/${encodeURIComponent(key)}/open`, { method: 'POST' }),
+  },
+
+  /** 主页功能入口的公开列表（仅展示字段，不含地址） */
+  features: {
+    list: () => request<{ features: Feature[] }>('/api/features'),
+  },
+
   admin: {
     listInvites: () => request<{ invites: Invite[] }>('/api/admin/invites'),
-    createInvite: () => request<Invite>('/api/admin/invites', { method: 'POST' }),
+    createInvite: (maxUses: number, expiresInDays: number) =>
+      request<Invite>('/api/admin/invites', { method: 'POST', body: JSON.stringify({ maxUses, expiresInDays }) }),
     revokeInvite: (id: number) => request<{ ok: true }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
 
     listBans: () => request<{ bans: Ban[] }>('/api/admin/bans'),
@@ -106,5 +145,30 @@ export const api = {
     listUsers: () => request<{ users: User[] }>('/api/admin/users'),
     setRole: (id: number, role: 'admin' | 'user') =>
       request<{ ok: true }>(`/api/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+
+    listGroups: () => request<{ groups: GroupView[] }>('/api/admin/groups'),
+    createGroup: (name: string) =>
+      request<{ group: GroupView }>('/api/admin/groups', { method: 'POST', body: JSON.stringify({ name }) }),
+    updateGroup: (id: number, patch: { name?: string; features?: string[] }) =>
+      request<{ ok: true }>(`/api/admin/groups/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteGroup: (id: number) => request<{ ok: true }>(`/api/admin/groups/${id}`, { method: 'DELETE' }),
+    setGroupMembers: (id: number, userIds: number[]) =>
+      request<{ ok: true }>(`/api/admin/groups/${id}/members`, {
+        method: 'PUT',
+        body: JSON.stringify({ userIds }),
+      }),
+
+    listFeatures: () => request<{ features: AdminFeature[] }>('/api/admin/features'),
+    createFeature: (input: { title: string; desc: string; tag: string; icon: string; url: string }) =>
+      request<{ feature: AdminFeature }>('/api/admin/features', { method: 'POST', body: JSON.stringify(input) }),
+    updateFeature: (key: string, input: { title: string; desc: string; tag: string; icon: string; url: string }) =>
+      request<{ ok: true }>(`/api/admin/features/${encodeURIComponent(key)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    deleteFeature: (key: string) =>
+      request<{ ok: true }>(`/api/admin/features/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+    reorderFeatures: (keys: string[]) =>
+      request<{ ok: true }>('/api/admin/features/order', { method: 'PUT', body: JSON.stringify({ keys }) }),
   },
 }

@@ -21,12 +21,16 @@ func (e *env) newRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	engine, err := router.New(router.Deps{
-		Config:       e.Cfg,
-		Auth:         e.Auth,
-		Sessions:     e.Sessions,
-		Guard:        e.Guard,
-		AuthHandler:  handler.NewAuthHandler(e.Auth, e.Sessions, e.Cfg),
-		AdminHandler: handler.NewAdminHandler(e.Invite, e.Guard, e.Auth),
+		Config:         e.Cfg,
+		Auth:           e.Auth,
+		Sessions:       e.Sessions,
+		Guard:          e.Guard,
+		Access:         e.Access,
+		Features:       e.Features,
+		AuthHandler:    handler.NewAuthHandler(e.Auth, e.Sessions, e.Cfg),
+		AdminHandler:   handler.NewAdminHandler(e.Invite, e.Guard, e.Auth),
+		AccessHandler:  handler.NewAccessAdminHandler(e.Access),
+		FeatureHandler: handler.NewFeatureAdminHandler(e.Features),
 	})
 	if err != nil {
 		t.Fatalf("初始化路由失败: %v", err)
@@ -119,6 +123,7 @@ func TestHTTPSessionFlow(t *testing.T) {
 	if !session.HttpOnly {
 		t.Fatal("会话 Cookie 必须是 HttpOnly")
 	}
+	csrf := findCookie(t, rec, httpx.CSRFCookie)
 
 	rec = call(t, engine, http.MethodGet, "/api/auth/session", ip, nil, withCookie(session))
 	if rec.Code != http.StatusOK {
@@ -128,7 +133,7 @@ func TestHTTPSessionFlow(t *testing.T) {
 		t.Fatalf("会话应返回当前账号，实际 %v", account)
 	}
 
-	rec = call(t, engine, http.MethodPost, "/api/auth/logout", ip, nil, withCookie(session))
+	rec = call(t, engine, http.MethodPost, "/api/auth/logout", ip, nil, withCredentials(session, csrf))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("登出应成功，实际 %d", rec.Code)
 	}
@@ -153,6 +158,7 @@ func TestHTTPGuestFlow(t *testing.T) {
 	if !session.HttpOnly {
 		t.Fatal("会话 Cookie 必须是 HttpOnly")
 	}
+	csrf := findCookie(t, rec, httpx.CSRFCookie)
 	if role := decode(t, rec)["user"].(map[string]any)["role"]; role != "guest" {
 		t.Fatalf("应以游客角色返回，实际 %v", role)
 	}
@@ -168,7 +174,7 @@ func TestHTTPGuestFlow(t *testing.T) {
 		t.Fatalf("游客访问管理接口应 403，实际 %d", rec.Code)
 	}
 
-	rec = call(t, engine, http.MethodPost, "/api/auth/logout", ip, nil, withCookie(session))
+	rec = call(t, engine, http.MethodPost, "/api/auth/logout", ip, nil, withCredentials(session, csrf))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("游客登出应成功，实际 %d", rec.Code)
 	}

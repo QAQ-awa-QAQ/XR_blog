@@ -26,6 +26,8 @@ type env struct {
 	Auth     *service.Auth
 	Sessions *service.Sessions
 	Invite   *service.Invite
+	Access   *service.Access
+	Features *service.Features
 }
 
 // testConfig 与 config.Load() 的默认值保持一致，仅把会话/邀请码时长调短以便断言。
@@ -77,13 +79,15 @@ func newEnv(t *testing.T, mutate ...func(*config.Config)) *env {
 		Auth:     service.NewAuth(db, sessions),
 		Sessions: sessions,
 		Invite:   service.NewInvite(db, cfg.InviteTTL),
+		Access:   service.NewAccess(db),
+		Features: service.NewFeatures(db),
 	}
 }
 
-// seedInvite 生成一个可用邀请码，返回其明文。
+// seedInvite 生成一个可用邀请码（1 次），返回其明文。
 func (e *env) seedInvite(t *testing.T) string {
 	t.Helper()
-	invite, err := e.Invite.Create(context.Background(), 1)
+	invite, err := e.Invite.Create(context.Background(), 1, 1, time.Hour)
 	if err != nil {
 		t.Fatalf("生成邀请码失败: %v", err)
 	}

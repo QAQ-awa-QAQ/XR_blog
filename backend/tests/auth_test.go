@@ -277,11 +277,31 @@ func TestEnsureAdminCreatesOnce(t *testing.T) {
 	}
 }
 
-// 邀请码默认 7 天有效（config.InviteTTL 的默认值）。
+// 邀请码一码多用：用满 MaxUses 次之后才失效。
+func TestInviteMultiUse(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	invite, err := e.Invite.Create(ctx, 1, 2, time.Hour)
+	if err != nil {
+		t.Fatalf("生成邀请码失败: %v", err)
+	}
+	for i, name := range []string{"multi_a", "multi_b"} {
+		if _, err := e.Auth.Register(ctx, registerInput(name, invite.Code)); err != nil {
+			t.Fatalf("第 %d 次注册应成功: %v", i+1, err)
+		}
+	}
+	// 用尽后第三次必须失败
+	if _, err := e.Auth.Register(ctx, registerInput("multi_c", invite.Code)); !errors.Is(err, service.ErrInviteInvalid) {
+		t.Fatalf("用尽后应报邀请码失效，实际 %v", err)
+	}
+}
+
+// 邀请码默认 7 天有效（config.InviteTTL 的默认值）；ttl 传 0 表示用默认。
 func TestInviteDefaultTTL(t *testing.T) {
 	e := newEnv(t)
 
-	invite, err := e.Invite.Create(context.Background(), 1)
+	invite, err := e.Invite.Create(context.Background(), 1, 3, 0)
 	if err != nil {
 		t.Fatalf("生成邀请码失败: %v", err)
 	}
@@ -290,5 +310,8 @@ func TestInviteDefaultTTL(t *testing.T) {
 	}
 	if len(invite.Code) != 16 {
 		t.Fatalf("邀请码应为 16 位，实际 %d", len(invite.Code))
+	}
+	if invite.MaxUses != 3 || invite.UsedCount != 0 {
+		t.Fatalf("次数应记录为 3 次上限，实际 %d/%d", invite.UsedCount, invite.MaxUses)
 	}
 }

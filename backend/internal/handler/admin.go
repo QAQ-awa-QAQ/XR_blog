@@ -35,6 +35,8 @@ type inviteDTO struct {
 	Code      string    `json:"code"`
 	CreatedBy uint      `json:"createdBy"`
 	UsedBy    *uint     `json:"usedBy"`
+	MaxUses   int       `json:"maxUses"`
+	UsedCount int       `json:"usedCount"`
 	Status    string    `json:"status"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -62,6 +64,8 @@ func (h *AdminHandler) ListInvites(c *gin.Context) {
 			Code:      it.Code,
 			CreatedBy: it.CreatedBy,
 			UsedBy:    it.UsedBy,
+			MaxUses:   it.MaxUses,
+			UsedCount: it.UsedCount,
 			Status:    status,
 			ExpiresAt: it.ExpiresAt,
 			CreatedAt: it.CreatedAt,
@@ -70,9 +74,33 @@ func (h *AdminHandler) ListInvites(c *gin.Context) {
 	httpx.OK(c, gin.H{"invites": out})
 }
 
+// CreateInvite 生成邀请码。请求体可省略：{maxUses, expiresInDays}，
+// 默认 1 次 / 7 天；上限 100 次 / 365 天。
 func (h *AdminHandler) CreateInvite(c *gin.Context) {
 	user := middleware.CurrentUser(c)
-	invite, err := h.invite.Create(c.Request.Context(), user.ID)
+
+	var body struct {
+		MaxUses       int `json:"maxUses"`
+		ExpiresInDays int `json:"expiresInDays"`
+	}
+	// 允许完全空请求体（老调用方兼容）——解析失败按默认值处理
+	_ = c.ShouldBindJSON(&body)
+	if body.MaxUses == 0 {
+		body.MaxUses = 1
+	}
+	if body.ExpiresInDays == 0 {
+		body.ExpiresInDays = 7
+	}
+	if body.MaxUses < 1 || body.MaxUses > 100 {
+		httpx.Fail(c, http.StatusBadRequest, "invalid_request", "可用次数需在 1-100 之间")
+		return
+	}
+	if body.ExpiresInDays < 1 || body.ExpiresInDays > 365 {
+		httpx.Fail(c, http.StatusBadRequest, "invalid_request", "有效期需在 1-365 天之间")
+		return
+	}
+
+	invite, err := h.invite.Create(c.Request.Context(), user.ID, body.MaxUses, time.Duration(body.ExpiresInDays)*24*time.Hour)
 	if err != nil {
 		httpx.Fail(c, http.StatusInternalServerError, "internal_error", "生成邀请码失败")
 		return
@@ -81,6 +109,8 @@ func (h *AdminHandler) CreateInvite(c *gin.Context) {
 		ID:        invite.ID,
 		Code:      invite.Code,
 		CreatedBy: invite.CreatedBy,
+		MaxUses:   invite.MaxUses,
+		UsedCount: invite.UsedCount,
 		Status:    "available",
 		ExpiresAt: invite.ExpiresAt,
 		CreatedAt: invite.CreatedAt,

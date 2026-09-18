@@ -398,7 +398,7 @@ export function MainShell({
           </section>
           <section className="section" id="features" aria-label="功能" inert={target !== 1}>
             <div className="section__body">
-              <FeaturesSection />
+              <FeaturesSection user={user} />
             </div>
           </section>
           <section className="section" id="contact" aria-label="联系" inert={target !== 2}>

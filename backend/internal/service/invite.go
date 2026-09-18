@@ -25,7 +25,14 @@ func NewInvite(db *gorm.DB, ttl time.Duration) *Invite {
 // 去掉易混淆字符（0/O/1/I/l），便于口头或手抄传递。
 const inviteAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 
-func (s *Invite) Create(ctx context.Context, createdBy uint) (*model.InviteCode, error) {
+// Create 新建邀请码：maxUses 为可用次数（1-100），ttl 为有效期（≤0 时用默认值）。
+func (s *Invite) Create(ctx context.Context, createdBy uint, maxUses int, ttl time.Duration) (*model.InviteCode, error) {
+	if maxUses < 1 || maxUses > 100 {
+		return nil, errors.New("可用次数需在 1-100 之间")
+	}
+	if ttl <= 0 {
+		ttl = s.ttl
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		code, err := randomCode(16)
 		if err != nil {
@@ -34,7 +41,9 @@ func (s *Invite) Create(ctx context.Context, createdBy uint) (*model.InviteCode,
 		invite := model.InviteCode{
 			Code:      code,
 			CreatedBy: createdBy,
-			ExpiresAt: time.Now().Add(s.ttl),
+			MaxUses:   maxUses,
+			UsedCount: 0,
+			ExpiresAt: time.Now().Add(ttl),
 		}
 		err = s.db.WithContext(ctx).Create(&invite).Error
 		if err == nil {

@@ -1,7 +1,9 @@
-import type { CSSProperties, MouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import gsap from 'gsap'
-import { SITE, type IconName } from '../../content/site'
-import type { User } from '../../api/client'
+import { SITE } from '../../content/site'
+import { ApiError, api, type Feature, type User } from '../../api/client'
+import { FeatureIcon } from '../../components/FeatureIcon'
+import { Modal } from '../../components/ui'
 import { ANCHORS } from '../../theme/palette'
 import { easings } from '../../motion/tokens'
 
@@ -33,31 +35,9 @@ type MoreProps = {
  * ——顺序即波包式入场的距离顺序。
  */
 
-const ICON_PATHS: Record<IconName, string> = {
-  terminal: 'M4 7l4 5-4 5M12 17h8',
-  chart: 'M4 19V5M4 19h16M8 19v-6M12 19V9M16 19v-3',
-  cloud: 'M7 18h9a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 6.5 9.5A4.25 4.25 0 0 0 7 18Z',
-  shield: 'M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z',
-  book: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z',
-  wrench: 'M14.5 4.5a4.5 4.5 0 0 0-6 6L4 15v3h3l4.5-4.5a4.5 4.5 0 0 0 6-6l-2.5 2.5-2.5-2.5z',
-}
-
-function Icon({ name }: { name: IconName }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d={ICON_PATHS[name]} />
-    </svg>
-  )
+function Icon({ name }: { name: string }) {
+  // 渲染口径统一在 FeatureIcon：24 视角框 / 1.7 描边 / 圆头；未知名回退 terminal
+  return <FeatureIcon name={name} size={20} />
 }
 
 export function IntroSection() {
@@ -89,8 +69,90 @@ export function IntroSection() {
   )
 }
 
-export function FeaturesSection() {
+export function FeaturesSection({ user }: { user: User }) {
   const { features } = SITE
+  /** 游客：入口全部是不可点的展示块（非按钮），点击不发任何请求 —— 页面等同静态 */
+  const locked = user.role === 'guest'
+  const [opening, setOpening] = useState('')
+  const [notice, setNotice] = useState('')
+
+  /** 功能列表来自后端公开接口（仅展示字段；内网地址永不出现） */
+  const [items, setItems] = useState<Feature[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.features
+      .list()
+      .then(({ features: list }) => {
+        if (cancelled) return
+        setItems(list)
+        setLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 数据到达后轻量淡入（主入场的波包在翻到本页时才播；这里兜住异步渲染的一拍）
+  useEffect(() => {
+    if (!loaded) return
+    const grid = gridRef.current
+    if (!grid || grid.children.length === 0) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const tween = gsap.fromTo(
+      Array.from(grid.children),
+      { autoAlpha: 0, y: 24 },
+      { autoAlpha: 1, y: 0, duration: 0.4, ease: easings.soft, stagger: 0.05, overwrite: 'auto' },
+    )
+    return () => {
+      tween.kill()
+    }
+  }, [loaded, items])
+
+  /** 点击功能入口：内网地址由后端按组鉴权后才下发。
+      前端不持有任何「能/不能看」信息，改 DOM 也绕不过服务端判定 */
+  const open = async (key: string) => {
+    if (locked || opening) return
+
+    // 必须在用户手势的同步调用栈里先开好空白窗口：
+    // 异步请求之后再 window.open 会被浏览器当成弹窗直接拦掉
+    const win = window.open('', '_blank')
+    if (!win) {
+      setNotice('浏览器拦截了新窗口，请允许本站打开弹窗后重试。')
+      return
+    }
+    // ⚠️ 不能在这里清 win.opener —— 断开后原页面就无权再导航这个窗口
+    //（浏览器会以 "Unsafe attempt to initiate navigation" 拒绝 location 赋值）
+
+    setOpening(key)
+    try {
+      const { url } = await api.access.openFeature(key)
+      // 双保险：后端已限制 http(s)，前端再校验一次前缀才交给浏览器
+      if (/^https?:\/\//i.test(url)) {
+        win.location.replace(url)
+      } else {
+        win.close()
+        setNotice('该功能地址不合法，已阻止打开。')
+      }
+    } catch (err) {
+      win.close()
+      if (err instanceof ApiError) {
+        if (err.status === 403) setNotice('您没有权限查看，请向管理页申请。')
+        else if (err.code === 'not_configured') setNotice('该功能暂未开放。')
+        else if (err.status === 401) setNotice('登录状态已过期，请重新登录。')
+        else setNotice('暂时无法打开，请稍后再试。')
+      } else {
+        setNotice('暂时无法打开，请稍后再试。')
+      }
+    } finally {
+      setOpening('')
+    }
+  }
 
   return (
     <div>
@@ -106,19 +168,54 @@ export function FeaturesSection() {
         </p>
       </header>
 
-      <div className="feature-grid">
-        {features.items.map((feature) => (
-          <article className="glass feature-card" key={feature.title} data-reveal>
-            <span className="feature-card__icon">
-              <Icon name={feature.icon} />
-            </span>
-            <h3 className="feature-card__title">{feature.title}</h3>
-            <p className="feature-card__desc">{feature.desc}</p>
-            <span className="tag">{feature.tag}</span>
-          </article>
-        ))}
+      <div className="feature-grid" ref={gridRef}>
+        {items.map((feature) =>
+          locked ? (
+            /* 游客：非按钮展示块 —— 无点击逻辑、无 tab 焦点，绝不请求后端 */
+            <article
+              className="glass feature-card feature-card--locked"
+              key={feature.key}
+              data-reveal
+              aria-disabled="true"
+            >
+              <FeatureCardBody feature={feature} />
+            </article>
+          ) : (
+            <button
+              type="button"
+              className="glass feature-card feature-card--open"
+              key={feature.key}
+              data-reveal
+              onClick={() => void open(feature.key)}
+              disabled={opening === feature.key}
+              aria-busy={opening === feature.key}
+            >
+              <FeatureCardBody feature={feature} />
+            </button>
+          ),
+        )}
       </div>
+
+      {notice ? (
+        <Modal title="无法打开" onClose={() => setNotice('')}>
+          <p className="field__hint">{notice}</p>
+        </Modal>
+      ) : null}
     </div>
+  )
+}
+
+/** 卡片内容：可点（按钮）与不可点（展示块）两种外壳共用 */
+function FeatureCardBody({ feature }: { feature: Feature }) {
+  return (
+    <>
+      <span className="feature-card__icon">
+        <Icon name={feature.icon} />
+      </span>
+      <h3 className="feature-card__title">{feature.title}</h3>
+      <p className="feature-card__desc">{feature.desc}</p>
+      <span className="tag">{feature.tag}</span>
+    </>
   )
 }
 
@@ -153,12 +250,6 @@ export function ContactSection() {
             <span className="field__hint">{item.hint}</span>
           </div>
         ))}
-
-        <div className="glass contact__card" data-reveal>
-          <span className="tag">{contact.qr.label}</span>
-          <div className="qr">{contact.qr.note}</div>
-          <span className="field__hint">放置微信或名片二维码</span>
-        </div>
       </div>
     </div>
   )

@@ -20,6 +20,16 @@ const (
 	argonSaltLen = 16
 )
 
+// VerifyPassword 可接受的参数上界：防御被注入的恶意哈希
+// （超大 m 会 OOM、p=0 会触发除零 panic，均不依赖调用方防范）。
+const (
+	maxArgonMemory  = 256 * 1024 // KiB，256 MB
+	maxArgonTime    = 10
+	maxArgonThreads = 16
+	maxArgonSaltCap = 64
+	maxArgonKeyCap  = 64
+)
+
 var errBadHashFormat = errors.New("密码哈希格式非法")
 
 // HashPassword 生成 PHC 格式的 argon2id 哈希：$argon2id$v=19$m=..,t=..,p=..$salt$hash
@@ -61,6 +71,17 @@ func VerifyPassword(password, encoded string) bool {
 	}
 	want, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
+		return false
+	}
+
+	// 参数与长度必须落在本实现同量级的范围内，超界一律视为非法。
+	if memory == 0 || memory > maxArgonMemory ||
+		timeCost == 0 || timeCost > maxArgonTime ||
+		threads == 0 || threads > maxArgonThreads {
+		return false
+	}
+	if len(salt) == 0 || len(salt) > maxArgonSaltCap ||
+		len(want) == 0 || len(want) > maxArgonKeyCap {
 		return false
 	}
 

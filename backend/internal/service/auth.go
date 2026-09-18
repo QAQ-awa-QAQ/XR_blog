@@ -64,16 +64,29 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput) (*model.User, err
 
 	var user model.User
 	err := a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+
+		// ① 先做原子占用：条件 UPDATE 是事务里的第一条语句，立刻拿到写锁。
+		// 若按「先读后写」的顺序，SQLite WAL 下并发事务会因读快照过期直接报
+		// BUSY（database is locked）——两个用户同时用同一码注册时一方会吃 500，
+		// 攻击者可故意并发触发。这里从根上规避：写在前，读在后。
+		res := tx.Model(&model.InviteCode{}).
+			Where("code = ? AND used_count < max_uses AND expires_at > ?", in.InviteCode, now).
+			Updates(map[string]any{
+				"used_count": gorm.Expr("used_count + 1"),
+				"used_at":    now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// 码不存在 / 已用尽 / 已过期；并发下也只会有一方占到
+			return ErrInviteInvalid
+		}
+
 		var invite model.InviteCode
-		err := tx.First(&invite, "code = ?", in.InviteCode).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrInviteInvalid
-		}
-		if err != nil {
+		if err := tx.First(&invite, "code = ?", in.InviteCode).Error; err != nil {
 			return err
-		}
-		if invite.Used() || invite.Expired(time.Now()) {
-			return ErrInviteInvalid
 		}
 
 		var count int64
@@ -104,10 +117,8 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput) (*model.User, err
 			return err
 		}
 
-		now := time.Now()
-		return tx.Model(&model.InviteCode{}).
-			Where("id = ? AND used_at IS NULL", invite.ID).
-			Updates(map[string]any{"used_by": user.ID, "used_at": now}).Error
+		return tx.Model(&model.InviteCode{}).Where("id = ?", invite.ID).
+			Update("used_by", user.ID).Error
 	})
 	if err != nil {
 		return nil, err
