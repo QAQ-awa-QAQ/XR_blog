@@ -1,9 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import gsap from 'gsap'
 import { Orbs } from '../components/Orbs'
 import { ErrorBanner, Spinner } from '../components/ui'
+import { easings } from '../motion/tokens'
 import { ApiError, api, type Ban, type Invite, type User } from '../api/client'
 
 type Stage = 'checking' | 'ready' | 'denied'
+
+/** 返回箭头的自绘线：与欢迎页 / 登录页同一套「线 + 两笔尖」，整体镜像成 ← */
+function BackArrow() {
+  return (
+    <svg className="admin__back-arrow" viewBox="-1.75 0 24 16" aria-hidden="true">
+      <line className="admin__back-line" x1="19" y1="8" x2="1.5" y2="8" />
+      <path className="admin__back-line" d="M1.5 8 L7.8 2.8" />
+      <path className="admin__back-line" d="M1.5 8 L7.8 13.2" />
+    </svg>
+  )
+}
 
 function formatTime(value: string | null) {
   if (!value) return '—'
@@ -14,7 +27,7 @@ function formatTime(value: string | null) {
  * 管理后台（用户批准的 4.3 白名单例外）。
  * 独立路径 /admin，不占用 design.md 2.5 规定的三个侧栏入口。
  */
-export function Admin({ themeLabel }: { themeLabel: string }) {
+export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () => void }) {
   const [stage, setStage] = useState<Stage>('checking')
   const [me, setMe] = useState<User | null>(null)
   const [invites, setInvites] = useState<Invite[]>([])
@@ -24,6 +37,43 @@ export function Admin({ themeLabel }: { themeLabel: string }) {
   const [busy, setBusy] = useState(false)
   const [banIP, setBanIP] = useState('')
   const [banForever, setBanForever] = useState(false)
+
+  const pageRef = useRef<HTMLDivElement>(null)
+  const backRef = useRef<HTMLButtonElement>(null)
+
+  /** 「←」的过场：箭头先向左发射飞走，页面再淡出，然后把视图切回主页
+      （同 bundle 内切换，没有整页导航的闪帧） */
+  const backToSite = () => {
+    const finish = () => onExit()
+    const page = pageRef.current
+    const arrow = backRef.current?.querySelector('svg')
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !page || !arrow) {
+      finish()
+      return
+    }
+    const tl = gsap.timeline({ onComplete: finish })
+    tl.to(arrow, { x: -56, autoAlpha: 0, duration: 0.38, ease: 'power2.in' }, 0)
+    tl.to(page, { autoAlpha: 0, duration: 0.34, ease: 'power1.in' }, 0.12)
+  }
+
+  // 正文向上浮现（checking → ready 时播放）—— 接在「管理后台按钮扩大至全屏」之后的那一段
+  useEffect(() => {
+    if (stage !== 'ready') return
+    const page = pageRef.current
+    if (!page) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const ctx = gsap.context(() => {
+      // 标题不动：主页那四个字就停在这个位置，切过来直接接替它（标题再动就是「重复出场」）
+      gsap.from(page.querySelectorAll('.admin__header p, .admin__header .row, .admin__grid > *'), {
+        y: 56,
+        autoAlpha: 0,
+        duration: 0.65,
+        ease: easings.soft,
+        stagger: 0.07,
+      })
+    }, page)
+    return () => ctx.revert()
+  }, [stage])
 
   const load = useCallback(async () => {
     const [inviteRes, banRes, userRes] = await Promise.all([
@@ -86,7 +136,7 @@ export function Admin({ themeLabel }: { themeLabel: string }) {
 
   if (stage === 'denied') {
     return (
-      <div className="admin">
+      <div className="admin" ref={pageRef}>
         <Orbs variant="pulse" />
         <div className="glass panel" style={{ maxWidth: 460, margin: '10vh auto' }}>
           <h1 className="panel__title">无法访问管理后台</h1>
@@ -94,9 +144,16 @@ export function Admin({ themeLabel }: { themeLabel: string }) {
             {me ? '当前账号不是管理员。' : '尚未登录，请先登录后再访问。'}
           </p>
           <div className="row">
-            <a className="btn btn--primary" href="/">
-              返回站点
-            </a>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm admin__back"
+              aria-label="返回站点"
+              title="返回站点"
+              ref={backRef}
+              onClick={backToSite}
+            >
+              <BackArrow />
+            </button>
           </div>
         </div>
       </div>
@@ -104,7 +161,7 @@ export function Admin({ themeLabel }: { themeLabel: string }) {
   }
 
   return (
-    <div className="admin">
+    <div className="admin" ref={pageRef}>
       <Orbs variant="pulse" />
 
       <header className="admin__header">
@@ -115,9 +172,16 @@ export function Admin({ themeLabel }: { themeLabel: string }) {
           </p>
         </div>
         <div className="row">
-          <a className="btn btn--glass btn--sm" href="/">
-            返回站点
-          </a>
+          <button
+            type="button"
+            className="btn btn--glass btn--sm admin__back"
+            aria-label="返回站点"
+            title="返回站点"
+            ref={backRef}
+            onClick={backToSite}
+          >
+            <BackArrow />
+          </button>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => void run(load)} disabled={busy}>
             刷新
           </button>

@@ -1,7 +1,9 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, MouseEvent } from 'react'
+import gsap from 'gsap'
 import { SITE, type IconName } from '../../content/site'
 import type { User } from '../../api/client'
 import { ANCHORS } from '../../theme/palette'
+import { easings } from '../../motion/tokens'
 
 /** 滑块轨道 = 这一天的 8 段锚点色（末尾补回首段的色，表示 24 点回绕）。
     「拖到哪儿会变成什么颜色」直接看得见，比另写一套色块列表省事 */
@@ -20,6 +22,7 @@ type MoreProps = {
   onThemeAuto: (auto: boolean) => void
   onThemeHour: (hour: number) => void
   onLogout: () => void
+  onEnterAdmin: () => void
 }
 
 /**
@@ -178,9 +181,85 @@ export function MoreSection({
   onThemeAuto,
   onThemeHour,
   onLogout,
+  onEnterAdmin,
 }: MoreProps) {
   const { more } = SITE
   const { settings } = more
+
+  /** 「管理后台」的过场（同 bundle 内切换视图，没有整页导航的闪帧）：
+      玻璃壳从按钮原位放大至全屏、同步化成主题底色；
+      主页其余内容同时淡出；
+      四字「管理后台」从按钮里拆出来单独演 —— 边膨胀（字号 14 → 36）边飞向
+      页面左上角（对准后台页标题的位置），落定后由后台标题原地接替 */
+  const enterAdmin = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    event.preventDefault()
+    const source = event.currentTarget
+    const rect = source.getBoundingClientRect()
+
+    // 四字从按钮里「拆」出来：克隆体只留玻璃壳，文字放进独立的 label
+    const ghost = source.cloneNode(true) as HTMLElement
+    ghost.classList.add('admin-ghost', 'admin-ghost--melt')
+    const label = document.createElement('span')
+    label.className = 'admin-ghost__label'
+    label.textContent = (source.textContent ?? '').trim()
+    ghost.textContent = ''
+    ghost.appendChild(label)
+    document.body.appendChild(ghost)
+    gsap.set(ghost, { x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+    gsap.set(source, { autoAlpha: 0 })
+
+    // 量出四字此刻在按钮里的位置（居中），转成绝对定位、原地接上
+    const labelRect = label.getBoundingClientRect()
+    gsap.set(label, {
+      position: 'absolute',
+      left: labelRect.left - rect.left,
+      top: labelRect.top - rect.top,
+    })
+
+    // 终点 = 后台页标题的位置与字号：四字落在页面左上角，跳过去刚好衔接
+    const END = { left: 51, top: 43, fontSize: 36 }
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        // 交给 App 切到后台视图；幽灵只撤壳，四字多留两帧 ——
+        // 等后台标题在同一个位置画出来了，再把它撤掉（看着就是「一直没动过」）
+        onEnterAdmin()
+        requestAnimationFrame(() => requestAnimationFrame(() => ghost.remove()))
+      },
+    })
+    // 玻璃壳放大至全屏 + 主页其余内容淡出（同时进行）
+    tl.to(
+      ghost,
+      {
+        x: 0,
+        y: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        borderRadius: 0,
+        duration: 0.55,
+        ease: easings.snappy,
+      },
+      0,
+    )
+    // 玻璃壳同步「融解」：填充、描边退到无（磨砂的退出在 CSS 关键帧 admin-melt 里，
+    // 因为 -webkit-backdrop-filter 不在 GSAP 的属性表里）——
+    // 全屏时露出的就是**真实的页面背景**（body 上的主题渐变），而不是补出来的一块底色。
+    // 匀速：中段还看得出「玻璃在变小」的样子，不会一直撑着白色到后段才突然消失
+    tl.to(
+      ghost,
+      {
+        backgroundColor: 'rgba(255, 255, 255, 0)',
+        borderColor: 'rgba(255, 255, 255, 0)',
+        duration: 0.55,
+        ease: 'none',
+      },
+      0,
+    )
+    tl.to('.shell', { autoAlpha: 0, duration: 0.45, ease: 'power1.out' }, 0)
+    // 四字：随按钮膨胀、向上飞向左上角 —— 落定后不再动，切过去由后台标题原地接替
+    tl.to(label, { ...END, duration: 0.55, ease: easings.snappy }, 0)
+  }
 
   return (
     <div>
@@ -256,7 +335,7 @@ export function MoreSection({
 
       <div className="more__actions" data-reveal>
         {user.role === 'admin' ? (
-          <a className="btn btn--glass" href="/admin">
+          <a className="btn btn--glass" href="/admin" onClick={enterAdmin}>
             管理后台
           </a>
         ) : null}

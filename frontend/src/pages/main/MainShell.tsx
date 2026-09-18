@@ -50,6 +50,8 @@ type Props = {
   onThemeAuto: (auto: boolean) => void
   onThemeHour: (hour: number) => void
   onLogout: () => void
+  /** 「管理后台」过场演完 → App 切到后台视图（同 bundle 内切换，不整页跳转） */
+  onEnterAdmin: () => void
   /** 登录过场进行中：卡片入场让位给过场（见下方 target effect） */
   handoff?: boolean
 }
@@ -73,6 +75,7 @@ export function MainShell({
   onThemeAuto,
   onThemeHour,
   onLogout,
+  onEnterAdmin,
   handoff = false,
 }: Props) {
   const [target, setTarget] = useState(0)
@@ -414,6 +417,7 @@ export function MainShell({
                 onThemeAuto={onThemeAuto}
                 onThemeHour={onThemeHour}
                 onLogout={onLogout}
+                onEnterAdmin={onEnterAdmin}
               />
             </div>
           </section>

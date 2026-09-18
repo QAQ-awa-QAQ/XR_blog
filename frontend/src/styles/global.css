@@ -1648,6 +1648,60 @@ button {
 
 /* ---------- 后台 ---------- */
 
+/* 「管理后台」按钮的克隆体：从原位放大至全屏、玻璃壳过渡成主题底色，
+   把「离开主页」这一帧接住（跳转瞬间后台的底就是同色） */
+.admin-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 70;
+  pointer-events: none;
+  margin: 0 !important;
+  transition: none !important;
+}
+
+/* 按钮里「拆」出来的四字：脱离按钮布局，独立演「膨胀 + 飞向左上角」 */
+.admin-ghost__label {
+  position: absolute;
+  white-space: nowrap;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* 壳的「融解」：背板的磨砂随放大一起退到无。
+   ⚠️ 这一步得用 CSS 关键帧：GSAP 不认识 -webkit-backdrop-filter（控制台会警告并忽略），
+   而 .btn--glass 里两条前缀都写了，只退标准属性的话磨砂会残留到幽灵被撤掉 */
+.admin-ghost--melt {
+  animation: admin-melt 0.55s linear forwards;
+}
+
+@keyframes admin-melt {
+  to {
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+}
+
+/* 「←」返回箭头的自绘线（与欢迎页 / 登录页同一套「线 + 两笔尖」，镜像成向左） */
+.admin__back-arrow {
+  width: 24px;
+  height: 16px;
+  display: block;
+  transition: translate 200ms var(--ease-out);
+}
+
+.admin__back:hover .admin__back-arrow {
+  translate: -3px 0;
+}
+
+.admin__back-line {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
 .admin {
   position: relative;
   z-index: 1;

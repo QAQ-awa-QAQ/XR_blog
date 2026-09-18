@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTimeTheme } from './theme/useTimeTheme'
 import { useCursorGlow } from './motion/useCursorGlow'
 import { HANDOFF_LEAD_MS } from './motion/tokens'
 import { LiquidGlassDefs } from './components/LiquidGlassDefs'
+import { Spinner } from './components/ui'
 import { Welcome } from './pages/Welcome'
 import { Auth } from './pages/Auth'
 import { AuthIntro } from './pages/AuthIntro'
@@ -12,6 +13,11 @@ import { Admin } from './pages/Admin'
 import { api, type User } from './api/client'
 
 type Stage = 'welcome' | 'auth' | 'main'
+
+/** 后台是独立路径：同一个 bundle 里的「第二个页面」。
+    两个视图之间不做整页导航 —— pushState + 内存状态切换（切的一瞬零闪帧），
+    地址栏照常显示 /admin，直链 / 刷新 / 前进后退都走这份状态 */
+const isAdminPath = () => window.location.pathname.replace(/\/+$/, '') === '/admin'
 
 /** 点击箭头后，转圈至少「弹出 0.4s → 完整展出 0.5s」再走下一步，避免一闪而过 */
 const SPIN_MIN_MS = 900
@@ -32,13 +38,61 @@ export function App() {
   const [authIntro, setAuthIntro] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [checking, setChecking] = useState(false)
+  /** 是否在后台视图。首次按地址栏判定（直链 /admin 仍可用） */
+  const [adminView, setAdminView] = useState(() => isAdminPath())
+  /** 从管理后台返回时若是冷启动（内存里没有会话）：屏幕上先摆「正在进入」，
+      校验通过就直接进主页（不回欢迎页） */
+  const [restoring, setRestoring] = useState(false)
+
+  // 浏览器后退 / 前进：后台视图跟着地址栏走
+  useEffect(() => {
+    const sync = () => setAdminView(isAdminPath())
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
+  }, [])
+
+  useEffect(() => {
+    if (!restoring) return
+    let cancelled = false
+    api.session()
+      .then(({ user: current }) => {
+        if (!cancelled) {
+          setUser(current)
+          setStage('main')
+        }
+      })
+      .catch(() => {
+        /* 会话已失效：落回欢迎页 */
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [restoring])
+
+  /** 主页 → 后台：过场动画播完才切（sections.tsx 的 enterAdmin 调） */
+  const enterAdminView = () => {
+    window.history.pushState(null, '', '/admin')
+    setAdminView(true)
+  }
+
+  /** 后台 → 主页：常规链路会话就在内存里，直接切视图；
+      冷启动直链后台的情况走一次校验（成功进主页、失败落回欢迎页） */
+  const exitAdminView = () => {
+    window.history.pushState(null, '', '/')
+    setAdminView(false)
+    if (user) setStage('main')
+    else setRestoring(true)
+  }
 
   // 后台不占用 design.md 2.5 规定的侧栏入口，因此走独立路径。
-  if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+  if (adminView) {
     return (
       <>
         <LiquidGlassDefs />
-        <Admin themeLabel={theme.label} />
+        <Admin themeLabel={theme.label} onExit={exitAdminView} />
       </>
     )
   }
@@ -96,7 +150,8 @@ export function App() {
   return (
     <>
       <LiquidGlassDefs />
-      {showWelcome ? <Welcome onEnter={enter} busy={checking} /> : null}
+      {showWelcome && !restoring ? <Welcome onEnter={enter} busy={checking} /> : null}
+      {restoring ? <Spinner label="正在进入…" /> : null}
       {showAuth ? (
         <Auth
           intro={authIntro}
@@ -120,6 +175,7 @@ export function App() {
             onThemeAuto={theme.setAuto}
             onThemeHour={theme.setHour}
             onLogout={logout}
+            onEnterAdmin={enterAdminView}
             handoff={handoff}
           />
           {handoffFrom ? <Handoff from={handoffFrom} onDone={() => setHandoffFrom(null)} /> : null}
