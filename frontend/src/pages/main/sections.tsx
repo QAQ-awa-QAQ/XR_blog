@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import gsap from 'gsap'
-import { SITE } from '../../content/site'
+import { DEFAULT_MORE_SETTINGS, type SectionConfig } from '../../content/site'
+import { useSite } from '../../content/siteContext'
 import { ApiError, api, type Feature, type User } from '../../api/client'
 import { FeatureIcon } from '../../components/FeatureIcon'
 import { Modal } from '../../components/ui'
@@ -14,8 +15,9 @@ const SLOT_TRACK = `linear-gradient(90deg, ${[
   `${ANCHORS[0].accent} 100%`,
 ].join(', ')})`
 
-/** 「更多」页需要的东西：当前账户、主题偏好与退出动作 */
+/** 「更多」页需要的东西：板块文案、当前账户、主题偏好与退出动作 */
 type MoreProps = {
+  section: SectionConfig
   user: User
   themeLabel: string
   accent: string
@@ -28,9 +30,9 @@ type MoreProps = {
 }
 
 /**
- * 三个页面的内容。
+ * 四个板块的内容渲染器。
  *
- * 文案统一来自 src/content/site.ts（改文案不必碰组件）；
+ * 文案全部由 props 传入（来源：站点配置 /api/site，后台可编辑）；
  * 这里只负责把数据渲染成 DOM，以及给每个条目打上 data-reveal
  * ——顺序即波包式入场的距离顺序。
  */
@@ -40,25 +42,23 @@ function Icon({ name }: { name: string }) {
   return <FeatureIcon name={name} size={20} />
 }
 
-export function IntroSection() {
-  const { intro } = SITE
-
+export function IntroSection({ section }: { section: SectionConfig }) {
   return (
     <div className="intro">
       <header className="section__head">
         <span className="section__eyebrow" data-reveal>
-          {intro.eyebrow}
+          {section.eyebrow}
         </span>
         <h2 className="section__title" data-reveal>
-          {intro.title}
+          {section.title}
         </h2>
         <p className="section__desc" data-reveal>
-          {intro.desc}
+          {section.desc}
         </p>
       </header>
 
       <div className="intro__stats">
-        {intro.stats.map((stat) => (
+        {(section.stats ?? []).map((stat) => (
           <div className="glass stat" key={stat.label} data-reveal>
             <span className="stat__value">{stat.value}</span>
             <span className="stat__label">{stat.label}</span>
@@ -69,8 +69,7 @@ export function IntroSection() {
   )
 }
 
-export function FeaturesSection({ user }: { user: User }) {
-  const { features } = SITE
+export function FeaturesSection({ section, user }: { section: SectionConfig; user: User }) {
   /** 游客：入口全部是不可点的展示块（非按钮），点击不发任何请求 —— 页面等同静态 */
   const locked = user.role === 'guest'
   const [opening, setOpening] = useState('')
@@ -165,13 +164,13 @@ export function FeaturesSection({ user }: { user: User }) {
     <div>
       <header className="section__head">
         <span className="section__eyebrow" data-reveal>
-          {features.eyebrow}
+          {section.eyebrow}
         </span>
         <h2 className="section__title" data-reveal>
-          {features.title}
+          {section.title}
         </h2>
         <p className="section__desc" data-reveal>
-          {features.desc}
+          {section.desc}
         </p>
       </header>
 
@@ -226,25 +225,23 @@ function FeatureCardBody({ feature }: { feature: Feature }) {
   )
 }
 
-export function ContactSection() {
-  const { contact } = SITE
-
+export function ContactSection({ section }: { section: SectionConfig }) {
   return (
     <div>
       <header className="section__head">
         <span className="section__eyebrow" data-reveal>
-          {contact.eyebrow}
+          {section.eyebrow}
         </span>
         <h2 className="section__title" data-reveal>
-          {contact.title}
+          {section.title}
         </h2>
         <p className="section__desc" data-reveal>
-          {contact.desc}
+          {section.desc}
         </p>
       </header>
 
       <div className="contact">
-        {contact.items.map((item) => (
+        {(section.items ?? []).map((item) => (
           <div className="glass contact__card" key={item.title} data-reveal>
             <span className="tag">{item.title}</span>
             {item.href ? (
@@ -271,6 +268,7 @@ const ROLE_HINTS: Record<User['role'], string> = {
 
 /** 「更多」页：站名、当前账户、主题设置，以及两个动作（设计稿里“其他信息”的安置处） */
 export function MoreSection({
+  section,
   user,
   themeLabel,
   accent,
@@ -281,8 +279,8 @@ export function MoreSection({
   onLogout,
   onEnterAdmin,
 }: MoreProps) {
-  const { more } = SITE
-  const { settings } = more
+  const site = useSite()
+  const settings = section.settings ?? DEFAULT_MORE_SETTINGS
 
   /** 「管理后台」的过场（同 bundle 内切换视图，没有整页导航的闪帧）：
       玻璃壳从按钮原位放大至全屏、同步化成主题底色；
@@ -363,21 +361,21 @@ export function MoreSection({
     <div>
       <header className="section__head">
         <span className="section__eyebrow" data-reveal>
-          {more.eyebrow}
+          {section.eyebrow}
         </span>
         <h2 className="section__title" data-reveal>
-          {more.title}
+          {section.title}
         </h2>
         <p className="section__desc" data-reveal>
-          {more.desc}
+          {section.desc}
         </p>
       </header>
 
       <div className="more">
         <div className="glass more__card" data-reveal>
           <span className="tag">本站</span>
-          <span className="more__brand">{SITE.brand}</span>
-          <span className="field__hint">{SITE.welcome.subtitle}</span>
+          <span className="more__brand">{site.brand}</span>
+          <span className="field__hint">{site.welcome.subtitle}</span>
         </div>
 
         <div className="glass more__card" data-reveal>

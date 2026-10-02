@@ -1,3 +1,5 @@
+import type { SiteConfig } from '../content/site'
+
 export type User = {
   id: number
   account: string
@@ -117,6 +119,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   session: () => request<{ user: User }>('/api/auth/session'),
+  /** 站点内容配置（公开接口，未登录也能读） */
+  site: () => request<SiteConfig>('/api/site'),
   login: (account: string, password: string) =>
     request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ account, password }) }),
   register: (payload: { account: string; password: string; nickname: string; inviteCode: string }) =>
@@ -176,5 +180,9 @@ export const api = {
       request<{ ok: true }>(`/api/admin/features/${encodeURIComponent(key)}`, { method: 'DELETE' }),
     reorderFeatures: (keys: string[]) =>
       request<{ ok: true }>('/api/admin/features/order', { method: 'PUT', body: JSON.stringify({ keys }) }),
+
+    /** 保存站点内容配置（服务端校验失败时抛 ApiError，message 可直接展示） */
+    updateSite: (config: SiteConfig) =>
+      request<{ ok: true; config: SiteConfig }>('/api/admin/site', { method: 'PUT', body: JSON.stringify(config) }),
   },
 }

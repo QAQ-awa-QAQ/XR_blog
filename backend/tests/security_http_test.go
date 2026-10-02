@@ -23,6 +23,7 @@ import (
 
 	"personal_blog/internal/httpx"
 	"personal_blog/internal/model"
+	"personal_blog/internal/service"
 )
 
 // adminCreds 确保管理员存在并完成登录，返回会话与 CSRF 凭据。
@@ -59,6 +60,7 @@ func adminWriteEndpoints() []struct {
 		{http.MethodPatch, "/api/admin/features/notexist", map[string]any{"title": "配置", "desc": "测试功能", "tag": "测试", "icon": "book"}},
 		{http.MethodDelete, "/api/admin/features/notexist", nil},
 		{http.MethodPut, "/api/admin/features/order", map[string]any{"keys": []string{}}},
+		{http.MethodPut, "/api/admin/site", service.DefaultSiteConfig()},
 		{http.MethodPost, "/api/features/terminal/open", nil},
 	}
 }

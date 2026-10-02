@@ -20,6 +20,7 @@ type Deps struct {
 	AdminHandler   *handler.AdminHandler
 	AccessHandler  *handler.AccessAdminHandler
 	FeatureHandler *handler.FeatureAdminHandler
+	SiteHandler    *handler.SiteHandler
 }
 
 // New 组装全部路由。这里是唯一的注册点，方便一眼看清攻击面：
@@ -52,6 +53,10 @@ func New(d Deps) (*gin.Engine, error) {
 	// 主页功能入口的公开列表：只有展示字段（标题/描述/标签/图标），
 	// 不含地址、不含权限——任何访客都能读，与挂在 bundle 里的静态数据等价。
 	api.GET("/features", d.FeatureHandler.PublicList)
+
+	// 站点内容与布局配置（欢迎页文案 / 板块编排 / 各板块文案）：
+	// 公开可读（内容本就是展示信息）；管理端整体更新见下方 admin 组。
+	api.GET("/site", d.SiteHandler.Public)
 
 	// design.md 4.3：只在这里接受输入，且必须先过限流/封禁闸门。
 	// 游客入口不接输入，但会创建服务端会话，同样纳入限流防刷。
@@ -100,6 +105,9 @@ func New(d Deps) (*gin.Engine, error) {
 		admin.PATCH("/features/:key", d.FeatureHandler.Update)
 		admin.DELETE("/features/:key", d.FeatureHandler.Delete)
 		admin.PUT("/features/order", d.FeatureHandler.Reorder)
+
+		// 站点内容与布局：整体替换（校验失败会原样返回可读的错误信息）。
+		admin.PUT("/site", d.SiteHandler.Update)
 	}
 
 	return r, nil

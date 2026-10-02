@@ -11,6 +11,8 @@ import { Handoff, type HandoffFrom } from './pages/Handoff'
 import { MainShell } from './pages/main/MainShell'
 import { Admin } from './pages/Admin'
 import { api, type User } from './api/client'
+import { DEFAULT_SITE, type SiteConfig } from './content/site'
+import { SiteContext } from './content/siteContext'
 
 type Stage = 'welcome' | 'auth' | 'main'
 
@@ -43,6 +45,22 @@ export function App() {
   /** 从管理后台返回时若是冷启动（内存里没有会话）：屏幕上先摆「正在进入」，
       校验通过就直接进主页（不回欢迎页） */
   const [restoring, setRestoring] = useState(false)
+  /** 站点内容配置：先用占位默认值渲染，拿到 /api/site 后替换（接口不可用时保持默认） */
+  const [site, setSite] = useState<SiteConfig>(DEFAULT_SITE)
+
+  useEffect(() => {
+    let cancelled = false
+    api.site()
+      .then((config) => {
+        if (!cancelled) setSite(config)
+      })
+      .catch(() => {
+        /* 接口不可用：用默认占位内容兜底 */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // 浏览器后退 / 前进：后台视图跟着地址栏走
   useEffect(() => {
@@ -85,6 +103,12 @@ export function App() {
     setAdminView(false)
     if (user) setStage('main')
     else setRestoring(true)
+    // 后台可能刚改过站点配置：返回时重拉一次，主页立即反映最新内容
+    api.site()
+      .then(setSite)
+      .catch(() => {
+        /* 拉取失败保持现有配置 */
+      })
   }
 
   // 后台不占用 design.md 2.5 规定的侧栏入口，因此走独立路径。
@@ -148,7 +172,7 @@ export function App() {
   const showAuth = stage === 'auth' || (handoffFrom !== null && handoffFrom !== 'welcome')
 
   return (
-    <>
+    <SiteContext.Provider value={site}>
       <LiquidGlassDefs />
       {showWelcome && !restoring ? <Welcome onEnter={enter} busy={checking} /> : null}
       {restoring ? <Spinner label="正在进入…" /> : null}
@@ -181,6 +205,6 @@ export function App() {
           {handoffFrom ? <Handoff from={handoffFrom} onDone={() => setHandoffFrom(null)} /> : null}
         </>
       ) : null}
-    </>
+    </SiteContext.Provider>
   )
 }

@@ -6,6 +6,7 @@ import { ErrorBanner, Field, Modal, Spinner } from '../components/ui'
 import { FeatureIcon } from '../components/FeatureIcon'
 import { FEATURE_ICON_LABELS, FEATURE_ICON_NAMES } from '../design/featureIcons'
 import { easings } from '../motion/tokens'
+import { DEFAULT_MORE_SETTINGS, DEFAULT_SITE, type SectionConfig, type SiteConfig } from '../content/site'
 import {
   ApiError,
   api,
@@ -35,7 +36,7 @@ function formatTime(value: string | null) {
 }
 
 /** 后台分区：左栏导航用（文字条目，沿用主页侧栏的胶囊语言） */
-type AdminSectionId = 'invites' | 'bans' | 'users' | 'groups' | 'features'
+type AdminSectionId = 'invites' | 'bans' | 'users' | 'groups' | 'features' | 'site'
 
 const ADMIN_SECTIONS: { id: AdminSectionId; label: string }[] = [
   { id: 'invites', label: '邀请码' },
@@ -43,6 +44,7 @@ const ADMIN_SECTIONS: { id: AdminSectionId; label: string }[] = [
   { id: 'users', label: '用户' },
   { id: 'groups', label: '用户组' },
   { id: 'features', label: '功能配置' },
+  { id: 'site', label: '站点配置' },
 ]
 
 /**
@@ -68,6 +70,8 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
   const [inviteDays, setInviteDays] = useState(7)
   const [newGroupName, setNewGroupName] = useState('')
   const [dragKey, setDragKey] = useState('')
+  /** 站点内容配置：后台只编辑草稿，保存时由服务端全量校验并落盘 */
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_SITE)
 
   const pageRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
@@ -109,18 +113,20 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
   }, [stage])
 
   const load = useCallback(async () => {
-    const [inviteRes, banRes, userRes, groupRes, featureRes] = await Promise.all([
+    const [inviteRes, banRes, userRes, groupRes, featureRes, siteRes] = await Promise.all([
       api.admin.listInvites(),
       api.admin.listBans(),
       api.admin.listUsers(),
       api.admin.listGroups(),
       api.admin.listFeatures(),
+      api.site(),
     ])
     setInvites(inviteRes.invites)
     setBans(banRes.bans)
     setUsers(userRes.users)
     setGroups(groupRes.groups)
     setAdminFeatures(featureRes.features)
+    setSiteConfig(siteRes)
   }, [])
 
   useEffect(() => {
@@ -212,6 +218,13 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
       if (featureDraft === 'new') await api.admin.createFeature(input)
       else if (featureDraft) await api.admin.updateFeature(featureDraft.key, input)
       setFeatureDraft(null)
+    })
+
+  /** 站点配置：保存草稿（校验失败时错误进 ErrorBanner，成功用返回值刷新） */
+  const saveSite = () =>
+    void run(async () => {
+      const { config } = await api.admin.updateSite(siteConfig)
+      setSiteConfig(config)
     })
 
   /** 分区切换：先淡出当前面板，换内容后再淡入（prefers-reduced-motion 时直接切） */
@@ -725,7 +738,20 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
             ))
           )}
         </section>
-      </div>
+        {/* 站点配置 */}
+        <section className="glass panel" hidden={section !== 'site'}>
+          <div className="panel__head">
+            <h2 className="panel__title">站点配置</h2>
+            <button type="button" className="btn btn--primary btn--sm" disabled={busy} onClick={saveSite}>
+              保存
+            </button>
+          </div>
+          <p className="field__hint">
+            保存后立即生效（主页下次请求 /api/site 时更新）；直接修改服务器上的 data/site.json 也会被热加载。
+            板块顺序即主页的排列顺序，取消勾选「前台可见」会把它从主页一并移除。
+          </p>
+          <SiteSettingsPanel config={siteConfig} onChange={setSiteConfig} />
+        </section>      </div>
 
       {featureDraft ? (
         <FeatureEditModal
@@ -866,5 +892,330 @@ function FeatureEditModal({
         ) : null}
       </div>
     </Modal>
+  )
+}
+
+/** 板块类型 → 编辑器里的标题（与渲染器同名，标明类型供排查） */
+const SECTION_TYPE_NAMES: Record<SectionConfig['type'], string> = {
+  intro: '首页 · intro',
+  features: '功能 · features',
+  contact: '联系 · contact',
+  more: '更多 · more',
+}
+
+/** 站点内容编辑器：站名 / 欢迎语 + 各板块文案与类型专属明细。
+    受控组件：所有修改走 onChange，由外层统一提交（服务端全量校验） */
+function SiteSettingsPanel({
+  config,
+  onChange,
+}: {
+  config: SiteConfig
+  onChange: (next: SiteConfig) => void
+}) {
+  const edit = (index: number, change: (item: SectionConfig) => SectionConfig) =>
+    onChange({
+      ...config,
+      sections: config.sections.map((item, i) => (i === index ? change(item) : item)),
+    })
+
+  const move = (index: number, delta: number) => {
+    const to = index + delta
+    if (to < 0 || to >= config.sections.length) return
+    const next = config.sections.slice()
+    const [moved] = next.splice(index, 1)
+    next.splice(to, 0, moved)
+    onChange({ ...config, sections: next })
+  }
+
+  return (
+    <div className="site-form">
+      <div className="site-form__grid">
+        <Field
+          label="站点名（1-24 字）"
+          value={config.brand}
+          maxLength={24}
+          onChange={(e) => onChange({ ...config, brand: e.target.value })}
+        />
+        <Field
+          label="欢迎页标题（4-24 字）"
+          value={config.welcome.title}
+          maxLength={24}
+          onChange={(e) => onChange({ ...config, welcome: { ...config.welcome, title: e.target.value } })}
+        />
+        <Field
+          label="欢迎页副标题（1-60 字）"
+          value={config.welcome.subtitle}
+          maxLength={60}
+          onChange={(e) => onChange({ ...config, welcome: { ...config.welcome, subtitle: e.target.value } })}
+        />
+      </div>
+
+      {config.sections.map((item, index) => {
+        const settings = item.settings ?? DEFAULT_MORE_SETTINGS
+        return (
+          <div className="glass site-sec" key={item.type}>
+            <div className="row site-sec__head">
+              <b>{SECTION_TYPE_NAMES[item.type]}</b>
+              <label className="chk">
+                <input
+                  type="checkbox"
+                  checked={item.visible}
+                  onChange={(e) => edit(index, (s) => ({ ...s, visible: e.target.checked }))}
+                />
+                前台可见
+              </label>
+              <span className="row site-sec__ops">
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  disabled={index === config.sections.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  下移
+                </button>
+              </span>
+            </div>
+
+            <div className="site-form__grid">
+              <Field
+                label="侧栏导航名（1-6 字，动作口径）"
+                value={item.label}
+                maxLength={6}
+                onChange={(e) => edit(index, (s) => ({ ...s, label: e.target.value }))}
+              />
+              <Field
+                label="眉标（1-24 字）"
+                value={item.eyebrow}
+                maxLength={24}
+                onChange={(e) => edit(index, (s) => ({ ...s, eyebrow: e.target.value }))}
+              />
+            </div>
+            <Field
+              label="标题（1-24 字）"
+              value={item.title}
+              maxLength={24}
+              onChange={(e) => edit(index, (s) => ({ ...s, title: e.target.value }))}
+            />
+            <Field
+              label="描述（1-160 字）"
+              value={item.desc}
+              maxLength={160}
+              onChange={(e) => edit(index, (s) => ({ ...s, desc: e.target.value }))}
+            />
+
+            {item.type === 'intro' ? (
+              <div className="field">
+                <span className="field__label">数据卡（1-8 行；保存时自动去掉全空行）</span>
+                {(item.stats ?? []).map((row, j) => (
+                  <div className="row" key={j}>
+                    <input
+                      className="field__input"
+                      style={{ width: 140 }}
+                      placeholder="数值（1-24 字）"
+                      maxLength={24}
+                      value={row.value}
+                      aria-label={`数据卡 ${j + 1} 数值`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          stats: (s.stats ?? []).map((r, k) => (k === j ? { ...r, value: e.target.value } : r)),
+                        }))
+                      }
+                    />
+                    <input
+                      className="field__input"
+                      style={{ width: 200 }}
+                      placeholder="标签（1-16 字）"
+                      maxLength={16}
+                      value={row.label}
+                      aria-label={`数据卡 ${j + 1} 标签`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          stats: (s.stats ?? []).map((r, k) => (k === j ? { ...r, label: e.target.value } : r)),
+                        }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() =>
+                        edit(index, (s) => ({ ...s, stats: (s.stats ?? []).filter((_, k) => k !== j) }))
+                      }
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => edit(index, (s) => ({ ...s, stats: [...(s.stats ?? []), { value: '', label: '' }] }))}
+                >
+                  添加一行
+                </button>
+              </div>
+            ) : null}
+
+            {item.type === 'contact' ? (
+              <div className="field">
+                <span className="field__label">
+                  联系方式（1-8 行；链接支持 mailto: 邮箱 或 http(s)://，可留空）
+                </span>
+                {(item.items ?? []).map((row, j) => (
+                  <div className="row site-sec__row" key={j}>
+                    <input
+                      className="field__input"
+                      style={{ width: 110 }}
+                      placeholder="标题"
+                      maxLength={12}
+                      value={row.title}
+                      aria-label={`条目 ${j + 1} 标题`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          items: (s.items ?? []).map((r, k) => (k === j ? { ...r, title: e.target.value } : r)),
+                        }))
+                      }
+                    />
+                    <input
+                      className="field__input"
+                      style={{ width: 180 }}
+                      placeholder="显示值"
+                      maxLength={64}
+                      value={row.value}
+                      aria-label={`条目 ${j + 1} 显示值`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          items: (s.items ?? []).map((r, k) => (k === j ? { ...r, value: e.target.value } : r)),
+                        }))
+                      }
+                    />
+                    <input
+                      className="field__input"
+                      style={{ width: 170 }}
+                      placeholder="说明"
+                      maxLength={40}
+                      value={row.hint}
+                      aria-label={`条目 ${j + 1} 说明`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          items: (s.items ?? []).map((r, k) => (k === j ? { ...r, hint: e.target.value } : r)),
+                        }))
+                      }
+                    />
+                    <input
+                      className="field__input"
+                      style={{ width: 230 }}
+                      placeholder="链接（可空）"
+                      maxLength={512}
+                      value={row.href ?? ''}
+                      aria-label={`条目 ${j + 1} 链接`}
+                      onChange={(e) =>
+                        edit(index, (s) => ({
+                          ...s,
+                          items: (s.items ?? []).map((r, k) =>
+                            k === j ? { ...r, href: e.target.value === '' ? undefined : e.target.value } : r,
+                          ),
+                        }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => edit(index, (s) => ({ ...s, items: (s.items ?? []).filter((_, k) => k !== j) }))}
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() =>
+                    edit(index, (s) => ({
+                      ...s,
+                      items: [...(s.items ?? []), { title: '', value: '', hint: '' }],
+                    }))
+                  }
+                >
+                  添加一行
+                </button>
+              </div>
+            ) : null}
+
+            {item.type === 'more' ? (
+              <div className="site-form__grid">
+                <Field
+                  label="设置区 · 跟随时间名称"
+                  value={settings.follow.name}
+                  maxLength={80}
+                  onChange={(e) =>
+                    edit(index, (s) => ({
+                      ...s,
+                      settings: { ...settings, follow: { ...settings.follow, name: e.target.value } },
+                    }))
+                  }
+                />
+                <Field
+                  label="设置区 · 跟随时间说明"
+                  value={settings.follow.hint}
+                  maxLength={80}
+                  onChange={(e) =>
+                    edit(index, (s) => ({
+                      ...s,
+                      settings: { ...settings, follow: { ...settings.follow, hint: e.target.value } },
+                    }))
+                  }
+                />
+                <Field
+                  label="设置区 · 主题时段名称"
+                  value={settings.slot.name}
+                  maxLength={80}
+                  onChange={(e) =>
+                    edit(index, (s) => ({
+                      ...s,
+                      settings: { ...settings, slot: { ...settings.slot, name: e.target.value } },
+                    }))
+                  }
+                />
+                <Field
+                  label="设置区 · 跟随中的说明"
+                  value={settings.slot.hintAuto}
+                  maxLength={80}
+                  onChange={(e) =>
+                    edit(index, (s) => ({
+                      ...s,
+                      settings: { ...settings, slot: { ...settings.slot, hintAuto: e.target.value } },
+                    }))
+                  }
+                />
+                <Field
+                  label="设置区 · 手动的说明"
+                  value={settings.slot.hintManual}
+                  maxLength={80}
+                  onChange={(e) =>
+                    edit(index, (s) => ({
+                      ...s,
+                      settings: { ...settings, slot: { ...settings.slot, hintManual: e.target.value } },
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }

@@ -28,6 +28,8 @@ type env struct {
 	Invite   *service.Invite
 	Access   *service.Access
 	Features *service.Features
+	Site     *service.SiteConfigStore
+	SitePath string
 }
 
 // testConfig 与 config.Load() 的默认值保持一致，仅把会话/邀请码时长调短以便断言。
@@ -49,7 +51,8 @@ func testConfig() config.Config {
 func newEnv(t *testing.T, mutate ...func(*config.Config)) *env {
 	t.Helper()
 
-	db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "test.db"))
+	dir := t.TempDir()
+	db, err := store.OpenSQLite(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("初始化 SQLite 失败: %v", err)
 	}
@@ -81,6 +84,8 @@ func newEnv(t *testing.T, mutate ...func(*config.Config)) *env {
 		Invite:   service.NewInvite(db, cfg.InviteTTL),
 		Access:   service.NewAccess(db),
 		Features: service.NewFeatures(db),
+		Site:     service.NewSiteConfigStore(filepath.Join(dir, "site.json")),
+		SitePath: filepath.Join(dir, "site.json"),
 	}
 }
 

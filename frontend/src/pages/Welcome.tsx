@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../components/Orbs'
-import { SITE } from '../content/site'
+import { useSite } from '../content/siteContext'
 import { durations, easings } from '../motion/tokens'
-
-const TITLE = SITE.welcome.title
 
 type Props = {
   /** 点击「登录 →」后由外层校验登录态 */
@@ -28,6 +26,7 @@ type Props = {
  * 点击任意处可跳过；prefers-reduced-motion 下直接落到终态。
  */
 export function Welcome({ onEnter, busy }: Props) {
+  const { welcome } = useSite()
   const rootRef = useRef<HTMLDivElement>(null)
   const curtainRef = useRef<HTMLDivElement>(null)
   const beamRef = useRef<HTMLDivElement>(null)
@@ -208,8 +207,8 @@ export function Welcome({ onEnter, busy }: Props) {
             XR
           </div>
 
-          <h1 className="welcome__title" ref={titleRef} aria-label={TITLE}>
-            {TITLE.split('').map((char, index) => (
+          <h1 className="welcome__title" ref={titleRef} aria-label={welcome.title}>
+            {welcome.title.split('').map((char, index) => (
               <span className="welcome__char" key={`${char}-${index}`} aria-hidden="true">
                 {char}
               </span>
@@ -265,7 +264,7 @@ export function Welcome({ onEnter, busy }: Props) {
           </button>
         </div>
 
-        <p className="welcome__subtitle">{SITE.welcome.subtitle}</p>
+        <p className="welcome__subtitle">{welcome.subtitle}</p>
       </div>
     </div>
   )

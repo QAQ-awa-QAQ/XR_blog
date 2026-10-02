@@ -31,6 +31,7 @@ func (e *env) newRouter(t *testing.T) *gin.Engine {
 		AdminHandler:   handler.NewAdminHandler(e.Invite, e.Guard, e.Auth),
 		AccessHandler:  handler.NewAccessAdminHandler(e.Access),
 		FeatureHandler: handler.NewFeatureAdminHandler(e.Features),
+		SiteHandler:    handler.NewSiteHandler(e.Site),
 	})
 	if err != nil {
 		t.Fatalf("初始化路由失败: %v", err)

@@ -1918,6 +1918,47 @@ button:active,
   color: var(--fg);
 }
 
+/* ---------- 站点配置编辑器 ---------- */
+.site-form {
+  width: 100%;
+  display: grid;
+  gap: var(--space-sm);
+  text-align: left;
+}
+
+.site-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 12px;
+}
+
+.site-sec {
+  padding: 14px 16px;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.site-sec__head {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.site-sec__head b {
+  font-size: 14px;
+}
+
+.site-sec__ops {
+  margin-left: auto;
+  gap: 6px;
+}
+
+.site-sec__row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 760px) {
   .admin__grid--with-nav {
     grid-template-columns: 1fr;

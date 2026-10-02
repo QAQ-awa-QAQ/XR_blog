@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -40,6 +41,9 @@ func main() {
 	guard := service.NewGuard(rdb, db, cfg)
 	access := service.NewAccess(db)
 	features := service.NewFeatures(db)
+	// 站点内容与布局配置：手改 data/site.json 或走管理后台，都是同一份文件
+	siteConfig := service.NewSiteConfigStore(filepath.Join(filepath.Dir(cfg.DBPath), "site.json"))
+	_ = siteConfig.Get() // 首次启动落盘默认配置，之后以文件为准
 
 	generated, created, err := auth.EnsureAdmin(ctx, cfg.AdminAccount, cfg.AdminPassword)
 	if err != nil {
@@ -69,6 +73,7 @@ func main() {
 		AdminHandler:   handler.NewAdminHandler(invite, guard, auth),
 		AccessHandler:  handler.NewAccessAdminHandler(access),
 		FeatureHandler: handler.NewFeatureAdminHandler(features),
+		SiteHandler:    handler.NewSiteHandler(siteConfig),
 	})
 	if err != nil {
 		log.Fatalf("初始化路由失败: %v", err)

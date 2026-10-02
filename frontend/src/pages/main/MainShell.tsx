@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { Orbs } from '../../components/Orbs'
-import { Sidebar, type SectionId } from './Sidebar'
+import { Sidebar } from './Sidebar'
 import { ContactSection, FeaturesSection, IntroSection, MoreSection } from './sections'
 import { springStep, waveAssign } from '../../motion/math'
 import { durations, easings, omega } from '../../motion/tokens'
 import { useOverflowMode } from '../../motion/useOverflowMode'
 import type { OrbVariant } from '../../motion/orbMotion'
 import type { User } from '../../api/client'
+import type { SectionConfig, SectionType } from '../../content/site'
+import { useSite } from '../../content/siteContext'
 
-const SECTIONS: { id: SectionId; label: string; orb: OrbVariant }[] = [
-  // label 现在同时是侧栏图标按钮的 aria-label / title（按钮只剩图标了），
-  // 以及分页器的「前往 XX」。所以它得是一个**动作**的说法，不只是分区名
-  { id: 'intro', label: '首页', orb: 'drift' },
-  { id: 'features', label: '功能', orb: 'pulse' },
-  { id: 'contact', label: '联系', orb: 'wave' },
+/** 各板块渲染器对应的光斑。label 现由站点配置提供——
+    它同时是侧栏图标按钮的 aria-label / title 以及分页器的「前往 XX」，
+    所以要是一个**动作**的说法，不只是分区名（后台编辑时按此口径填写） */
+const ORB_BY_TYPE: Record<SectionType, OrbVariant> = {
+  intro: 'drift',
+  features: 'pulse',
+  contact: 'wave',
   // 「更多」是第四个**页面**（站名 / 账户 / 后台 / 退出），不是一个弹出菜单。
   // 光斑复用 drift：这一页全是账户信息，背景不该抢戏
-  { id: 'more', label: '更多', orb: 'drift' },
-]
+  more: 'drift',
+}
 
 /** 触控板细碎抖动过滤（不是时间锁，只用来判定"这一次算不算一次意图"） */
 const GESTURE_THRESHOLD = 24
@@ -78,6 +81,8 @@ export function MainShell({
   onEnterAdmin,
   handoff = false,
 }: Props) {
+  const site = useSite()
+  const sections = useMemo(() => site.sections.filter((section) => section.visible), [site])
   const [target, setTarget] = useState(0)
 
   const targetRef = useRef(0)
@@ -97,14 +102,28 @@ export function MainShell({
   const axis: 'y' | 'x' = overflow ? 'x' : 'y'
   axisRef.current = axis
 
-  const goTo = useCallback((next: number) => {
-    const clamped = Math.max(0, Math.min(SECTIONS.length - 1, next))
-    if (clamped === targetRef.current) return
-    targetRef.current = clamped
-    setTarget(clamped)
-  }, [])
+  const goTo = useCallback(
+    (next: number) => {
+      const clamped = Math.max(0, Math.min(sections.length - 1, next))
+      if (clamped === targetRef.current) return
+      targetRef.current = clamped
+      setTarget(clamped)
+    },
+    [sections.length],
+  )
 
   const step = useCallback((delta: number) => goTo(targetRef.current + delta), [goTo])
+
+  /** 渲染用：配置热更新后 target 可能瞬时越界，先钳到合法区间（state 随后由下方 effect 对齐） */
+  const safeTarget = Math.min(target, sections.length - 1)
+
+  // 配置更新后板块可能变少（后台隐藏/删减）：目标越界就拉回最后一块
+  useEffect(() => {
+    if (targetRef.current <= sections.length - 1) return
+    targetRef.current = sections.length - 1
+    positionRef.current = Math.min(positionRef.current, sections.length - 1)
+    setTarget(sections.length - 1)
+  }, [sections.length])
 
   // 唯一的时间源：临界阻尼弹簧
   useEffect(() => {
@@ -219,7 +238,7 @@ export function MainShell({
             return
           case 'End':
             event.preventDefault()
-            goTo(SECTIONS.length - 1)
+            goTo(sections.length - 1)
             return
           default:
             // 上下键 / PageUp / PageDown / 空格：交给正文滚动
@@ -245,7 +264,7 @@ export function MainShell({
           break
         case 'End':
           event.preventDefault()
-          goTo(SECTIONS.length - 1)
+          goTo(sections.length - 1)
           break
         default:
           break
@@ -289,7 +308,7 @@ export function MainShell({
       window.removeEventListener('touchstart', onTouchStart)
       window.removeEventListener('touchend', onTouchEnd)
     }
-  }, [goTo, step])
+  }, [goTo, step, sections.length])
 
   // 目标页的卡片入场：波包式，延迟随到波源的距离增长
   useEffect(() => {
@@ -381,59 +400,53 @@ export function MainShell({
 
   return (
     <div className="shell">
-      <Orbs variant={SECTIONS[target].orb} />
+      <Orbs variant={ORB_BY_TYPE[sections[safeTarget].type]} />
 
       <Sidebar
-        items={SECTIONS.map((section) => ({ id: section.id, label: section.label }))}
-        active={target}
+        items={sections.map((section) => ({ id: section.type, label: section.label }))}
+        active={safeTarget}
         onSelect={goTo}
       />
 
       <div className="viewport" ref={viewportRef}>
         <div className="viewport__track" ref={trackRef} data-axis={axis}>
-          <section className="section" id="intro" aria-label="首页" inert={target !== 0}>
-            <div className="section__body">
-              <IntroSection />
-            </div>
-          </section>
-          <section className="section" id="features" aria-label="功能" inert={target !== 1}>
-            <div className="section__body">
-              <FeaturesSection user={user} />
-            </div>
-          </section>
-          <section className="section" id="contact" aria-label="联系" inert={target !== 2}>
-            <div className="section__body">
-              <ContactSection />
-            </div>
-          </section>
-          <section className="section" id="more" aria-label="更多" inert={target !== 3}>
-            <div className="section__body">
-              <MoreSection
-                user={user}
-                themeLabel={themeLabel}
-                accent={accent}
-                themeAuto={themeAuto}
-                themeHour={themeHour}
-                onThemeAuto={onThemeAuto}
-                onThemeHour={onThemeHour}
-                onLogout={onLogout}
-                onEnterAdmin={onEnterAdmin}
-              />
-            </div>
-          </section>
+          {sections.map((section, index) => (
+            <section
+              key={section.type}
+              className="section"
+              id={section.type}
+              aria-label={section.label}
+              inert={safeTarget !== index}
+            >
+              <div className="section__body">
+                <SectionView
+                  section={section}
+                  user={user}
+                  themeLabel={themeLabel}
+                  accent={accent}
+                  themeAuto={themeAuto}
+                  themeHour={themeHour}
+                  onThemeAuto={onThemeAuto}
+                  onThemeHour={onThemeHour}
+                  onLogout={onLogout}
+                  onEnterAdmin={onEnterAdmin}
+                />
+              </div>
+            </section>
+          ))}
         </div>
 
         <div className="pager">
           <span>
-            {String(target + 1).padStart(2, '0')} / {String(SECTIONS.length).padStart(2, '0')}
+            {String(safeTarget + 1).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
           </span>
           <div className="pager__dots">
-            {SECTIONS.map((section, index) => (
+            {sections.map((section, index) => (
               <button
-                key={section.id}
+                key={section.type}
                 type="button"
                 className="pager__dot"
-                aria-current={index === target}
+                aria-current={index === safeTarget}
                 aria-label={`前往${section.label}`}
                 onClick={() => goTo(index)}
               />
@@ -443,4 +456,53 @@ export function MainShell({
       </div>
     </div>
   )
+}
+
+/** 板块内容分发：配置里的类型 → 对应渲染器（类型在服务端校验，必为这四种之一） */
+function SectionView({
+  section,
+  user,
+  themeLabel,
+  accent,
+  themeAuto,
+  themeHour,
+  onThemeAuto,
+  onThemeHour,
+  onLogout,
+  onEnterAdmin,
+}: {
+  section: SectionConfig
+  user: User
+  themeLabel: string
+  accent: string
+  themeAuto: boolean
+  themeHour: number
+  onThemeAuto: (auto: boolean) => void
+  onThemeHour: (hour: number) => void
+  onLogout: () => void
+  onEnterAdmin: () => void
+}) {
+  switch (section.type) {
+    case 'intro':
+      return <IntroSection section={section} />
+    case 'features':
+      return <FeaturesSection section={section} user={user} />
+    case 'contact':
+      return <ContactSection section={section} />
+    case 'more':
+      return (
+        <MoreSection
+          section={section}
+          user={user}
+          themeLabel={themeLabel}
+          accent={accent}
+          themeAuto={themeAuto}
+          themeHour={themeHour}
+          onThemeAuto={onThemeAuto}
+          onThemeHour={onThemeHour}
+          onLogout={onLogout}
+          onEnterAdmin={onEnterAdmin}
+        />
+      )
+  }
 }
