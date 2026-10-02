@@ -39,6 +39,10 @@ display:grid;gap:6px}
 .kv{display:flex;justify-content:space-between;gap:16px}
 .kv b{font-weight:600;color:rgba(9,9,11,.86)}
 code{font-family:ui-monospace,"SFMono-Regular",Menlo,monospace;font-size:12.5px}
+.action{display:inline-block;margin-top:22px;padding:10px 24px;border-radius:999px;font-size:14px;
+font-weight:600;text-decoration:none;color:#fff;background:linear-gradient(135deg,#6366F1,#8B5CF6);
+box-shadow:0 8px 20px rgba(99,102,241,.35)}
+.action:hover{filter:brightness(1.06)}
 `
 
 type pageData struct {
@@ -47,6 +51,9 @@ type pageData struct {
 	Message  string
 	Rows     [][2]string
 	ShowMeta bool
+	// Link 可选：一个动作按钮（如“前往博客登录”），LinkText 为其文案。
+	Link     string
+	LinkText string
 }
 
 func renderPage(d pageData) string {
@@ -59,13 +66,22 @@ func renderPage(d pageData) string {
 	if d.ShowMeta && rows != "" {
 		meta = `<div class="meta">` + rows + `</div>`
 	}
+	action := ""
+	if d.Link != "" {
+		text := d.LinkText
+		if text == "" {
+			text = "继续"
+		}
+		action = `<a class="action" href="` + html.EscapeString(d.Link) + `" rel="noopener">` +
+			html.EscapeString(text) + `</a>`
+	}
 	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>` + html.EscapeString(d.Title) + `</title><style>` + pageStyle + `</style></head>` +
 		`<body><div class="orb orb-1"></div><div class="orb orb-2"></div>` +
 		`<main class="card"><span class="badge">` + html.EscapeString(d.Badge) + `</span>` +
 		`<h1>` + html.EscapeString(d.Title) + `</h1><p>` + html.EscapeString(d.Message) + `</p>` +
-		meta + `</main></body></html>`
+		meta + action + `</main></body></html>`
 }
 
 // BannedPage 展示封禁详情与剩余时长（永久封禁不显示倒计时）。

@@ -132,11 +132,19 @@ export function Handoff({ from, onDone }: { from: HandoffFrom; onDone: () => voi
 
     const tl = gsap.timeline({ onComplete: finish })
 
-    // 1) 出场页内容整体左移出屏（按屏宽给足距离，不被元素自身宽度卡住）
+    // 1) 出场页内容整体左移出屏。距离取两个约束中更远者：
+    //    · 至少 85% 屏宽（宽屏上的观感距离）；
+    //    · 必须让内容**完全出屏** —— 手机上卡片几乎与屏幕等宽，85% 屏宽不够，
+    //      右缘会一直残留在屏幕里（实测残留 45px，持续到过场结束才随卸载消失）。
+    //    r.right 已含当前 transform，减去 current 还原布局右缘；出屏后右缘停在 -24 兜底。
     tl.to(
       inner,
       {
-        x: () => -window.innerWidth * 0.85,
+        x: () => {
+          const r = inner.getBoundingClientRect()
+          const current = Number(gsap.getProperty(inner, 'x')) || 0
+          return -Math.max(window.innerWidth * 0.85, r.right - current + 24)
+        },
         duration: durations.handoffExit,
         ease: easings.snappy,
       },

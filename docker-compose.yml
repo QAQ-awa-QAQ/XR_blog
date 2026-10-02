@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8088}:80"
+      # 中转网关（服务反代入口）：GATEWAY_ENABLED=true 时才由 Nginx 监听 8808
+      - "${GATEWAY_HTTP_PORT:-8808}:8808"
     environment:
       DB_PATH: /data/blog.db
       REDIS_ADDR: redis:6379
@@ -20,10 +22,20 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123}
       # 明文 HTTP 下必须为 false；一旦挂上 HTTPS 域名就改成 true
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # ---- 中转网关 ----
+      # 启用后 Nginx 监听 8808：按 Host 认领功能、鉴权后反代到上游服务
+      GATEWAY_ENABLED: ${GATEWAY_ENABLED:-false}
+      # 会话 Cookie 的 Domain（跨子域共享会话，如 .example.com）；空 = host-only
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      # 网关拦截页里的“前往博客登录”按钮地址（如 http://192.168.11.196:8088）
+      BLOG_PUBLIC_URL: ${BLOG_PUBLIC_URL:-}
       TRUSTED_PROXIES: 127.0.0.1,::1
       TZ: Asia/Shanghai
     volumes:
       - ./data:/data
+    # 让容器内可用 host.docker.internal 访问宿主机服务（网关上游如 127.0.0.1 之外的服务）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy

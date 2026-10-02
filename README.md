@@ -35,7 +35,9 @@
 - 光标扫过时，假边线亮起 1px 硬高光 + 向外弥散的柔光，**光色随明暗反相**（亮色主题深色弥散 +
   灰白描边，深色主题保持亮白）；胶囊把边线掐断的那四个「头」上各挂一个**常亮的虚拟光标**
   （与真光标共用半径 / 落点曲线 / 模糊，唯一差别是没有 `opacity` 门禁）
-- 手机端：横条落到底部，**同一套设计转 90°** —— 胶囊躺下、溢出从左右改成上下、四个头随之转置
+- 手机端：横条**悬浮在内容之上**（滚动时内容从玻璃轨道下面划过），**同一套设计转 90°** ——
+  胶囊躺下、溢出从左右改成上下、四个头随之转置；正文为悬浮底栏预留底部安全区，滚到底不被遮挡
+- 触屏按压反馈：控件按下时轻微缩小（同时关掉移动端浏览器默认的「点击高光」）
 - 滚动条隐藏（不占位、不影响滚动），尊重 `prefers-reduced-motion`，键盘焦点可见
 
 **账号与权限**
@@ -50,6 +52,11 @@
 - **功能入口后台化**：标题 / 描述 / 标签 / 图标（56 个内置图标可选）与**内网地址**统一入库管理；
   主页公开列表只含展示字段，内网地址只存服务端、点击时经鉴权才下发（`no-store`）；
   游客的功能卡片不可点击——页面等同静态，零数据交流
+- **服务中转网关（可选）**：把本机 / 内网服务（CVAT、Git、面板……）收进同一个入口——
+  浏览器永远打开固定域名（如 `cvat.example.com`），由本服务**先鉴权再反向代理**，
+  上游零暴露；地址不随「局域网 IP / 内网穿透」等访问方式变化，上游真实地址永不下发
+- 中转网关支持 WebSocket 与大数据集上传；转发时剥离本站会话 Cookie，
+  上游自己的 Cookie 天然隔离在各自子域中
 
 **安全（`design.md` 第 4 章的可执行实现）**
 
@@ -78,7 +85,7 @@
 | 后端 | Go · Gin · GORM · SQLite（纯 Go driver，免 CGO） |
 | 缓存/会话 | Redis 7（AOF 持久化） |
 | 部署 | 单容器内 Nginx + Go 双进程，多阶段构建 |
-| 测试 | 后端 Go `testing` + miniredis（69 项，含安全测试套件）；前端 `node --test` 自检 24 项 |
+| 测试 | 后端 Go `testing` + miniredis（77 项，含安全测试与中转网关套件）；前端 `node --test` 自检 24 项 |
 
 ---
 
@@ -138,6 +145,37 @@ ADMIN_ACCOUNT=admin ADMIN_PASSWORD='your-strong-password' docker compose up -d -
 >
 > ⚠️ `docker-compose.yml` 里的默认口令 `123` 是**本地模拟用的弱口令**，且会随仓库公开。
 > 对外部署前务必用环境变量覆盖：`ADMIN_PASSWORD='强密码' docker compose up -d`。
+
+### 接入本机服务（中转网关）
+
+把只监听本机 / 内网的服务（CVAT、Git、面板……）收进同一个入口：浏览器永远打开
+固定域名（`cvat.example.com` 这类），由本站先鉴权再反向代理——上游服务零暴露，
+地址也不随「局域网 IP / 内网穿透」等访问方式变化。
+
+1. 启用网关（compose 环境变量，宿主多暴露一个 8808 端口）：
+
+   ```bash
+   GATEWAY_ENABLED=true \
+   COOKIE_DOMAIN=.example.com \
+   BLOG_PUBLIC_URL=https://blog.example.com \
+   docker compose up -d
+   ```
+
+   `COOKIE_DOMAIN` 按你的域名后缀填（跨子域共享登录态）；`BLOG_PUBLIC_URL` 是拦截页
+   「前往博客登录」按钮的地址。
+
+2. 把域名指向这台服务器：
+   - **内网穿透**：`blog.example.com` → 本机 **8088**，`cvat.example.com` 等 → 本机 **8808**
+     （推荐 http / https 类型隧道，需保留 Host 头）
+   - **局域网**：把 `*.example.com` 解析到服务器内网 IP（路由器 DNS 或设备 hosts），
+     经 `cvat.example.com:8808` 访问
+
+3. 后台「功能配置」新建 / 编辑功能 → 点击行为选「中转网关」：
+   - **上游地址**：`http://host.docker.internal:3000/`（或宿主机内网 IP，端口按服务实际改）
+   - **对外主机名**：`cvat.example.com`
+
+授权用户在主页点该功能卡片，打开的永远是 `cvat.example.com`；未登录或无授权者
+访问该域名只能看到拦截页。上游服务自身的登录、数据完全保持原样。
 
 ### 本地开发
 
@@ -205,6 +243,10 @@ DESIGN-LOG.md      设计决策与踩坑记录
 | `ADMIN_PASSWORD` | 空 | 留空则随机生成并打印到日志 |
 | `COOLDOWN_WINDOW` / `COOLDOWN_LIMIT` / `COOLDOWN_DURATION` | `10s` / `3` / `10s` | 冷却规则 |
 | `BAN_WINDOW` / `BAN_LIMIT` / `BAN_DURATION` | `20s` / `20` / `24h` | 封禁规则 |
+| `GATEWAY_ENABLED` | `false` | 启用中转网关：Nginx 额外监听 8808（宿主 `GATEWAY_HTTP_PORT`），按 Host 鉴权后反代到上游服务 |
+| `GATEWAY_HTTP_PORT` | `8808` | 网关的宿主机端口 |
+| `COOKIE_DOMAIN` | 空 | 会话 Cookie 的 Domain（如 `.example.com`）：网关跨子域共享登录态；空 = host-only |
+| `BLOG_PUBLIC_URL` | 空 | 网关拦截页「前往博客登录」按钮的地址（如 `https://blog.example.com`） |
 
 真实客户端 IP 取自 `RemoteAddr`（边缘直连场景）。前面再加一层反向代理或 Cloudflare 时，只需启用 Nginx `realip` 模块、声明可信网段并同步调整 `TRUSTED_PROXIES`，应用代码无需改动。
 
@@ -246,7 +288,7 @@ go test ./tests/... -count=1
 
 `backend/tests/` 覆盖：冷却与封禁阈值、冷却期仍计数、再犯永久、限时封禁到期保留触犯次数、argon2id 哈希与校验、邀请码必填/单次/过期、重复账号、会话生命周期、冷启动管理员只建一次，以及走完整路由与中间件链的 HTTP 集成测试（错误码、管理员角色 + CSRF、闸门 `X-Block` 协议）。
 
-前端有一组**纯函数断言**（25 项），把动效与配色里靠肉眼难查的性质固定下来：
+前端有一组**纯函数断言**（24 项），把动效与配色里靠肉眼难查的性质固定下来：
 
 ```bash
 cd frontend
@@ -293,7 +335,7 @@ then open  http://localhost:5173/reference/palette-review.html
 │  │  ├─ httpx/              # Cookie 与统一响应
 │  │  ├─ middleware/         # ipguard / auth / csrf
 │  │  ├─ service/            # auth / session / guard / invite
-│  │  ├─ handler/            # auth / admin / internal / page
+│  │  ├─ handler/            # auth / admin / feature / gateway / page / internal
 │  │  └─ router/             # 路由唯一注册点
 │  └─ tests/                 # 测试程序
 ├─ frontend/
@@ -308,7 +350,8 @@ then open  http://localhost:5173/reference/palette-review.html
 │  ├─ scripts/                  # 三组校验脚本（node --test）
 │  └─ reference/                # 开发用对照页（不进生产构建）
 ├─ deploy/
-│  ├─ nginx.conf                # 闸门 + 静态托管
+│  ├─ nginx.conf.template       # 闸门 + 静态托管（含网关块占位）
+│  ├─ gateway-server.conf       # 网关专用 8808 server 段
 │  └─ entrypoint.sh             # 单容器双进程
 ├─ design-system/               # 由 ui-ux-pro-max 生成的设计系统
 ├─ design.md                    # 需求（唯一需求源）

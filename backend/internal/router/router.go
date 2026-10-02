@@ -39,9 +39,15 @@ func New(d Deps) (*gin.Engine, error) {
 	r.GET("/banned", handler.BannedPage(d.Guard))
 	r.GET("/cooldown", handler.CooldownPage(d.Guard))
 
-	requireAuth := middleware.RequireAuth(d.Auth, d.Sessions, d.Config.CookieSecure)
+	requireAuth := middleware.RequireAuth(d.Auth, d.Sessions, d.Config.CookieSecure, d.Config.CookieDomain)
 
 	api := r.Group("/api")
+
+	// 中转网关：Nginx 在独立端口（如 8808）上把请求以 /_gw 前缀送入，
+	// 与 /api 路由彻底隔离——服务子域的任意路径（含它自己的 /api/…）都经此进入，
+	// 由网关完成会话+授权校验后反代到上游。
+	gateway := handler.NewGatewayHandler(d.Features, d.Sessions, d.Auth, d.Access, d.Config)
+	r.Any("/_gw/*path", gateway.Serve)
 
 	// 主页功能入口的公开列表：只有展示字段（标题/描述/标签/图标），
 	// 不含地址、不含权限——任何访客都能读，与挂在 bundle 里的静态数据等价。

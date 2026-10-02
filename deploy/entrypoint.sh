@@ -3,6 +3,20 @@
 # 任一进程退出即整体退出，避免出现"容器活着但服务已死"的假健康状态。
 set -eu
 
+# ---- 渲染 Nginx 配置：按 GATEWAY_ENABLED 决定是否挂载 8808 中转网关 ----
+if [ "${GATEWAY_ENABLED:-false}" = "true" ]; then
+    echo "[entrypoint] 中转网关已启用：Nginx 监听 8808（宿主端口见 compose 映射）"
+    sed -e '/__GATEWAY_BLOCK__/r /app/gateway-server.conf' \
+        -e '/__GATEWAY_BLOCK__/d' \
+        /app/nginx.conf.template > /etc/nginx/nginx.conf
+else
+    sed '/__GATEWAY_BLOCK__/d' /app/nginx.conf.template > /etc/nginx/nginx.conf
+fi
+if ! nginx -t 2>&1; then
+    echo "[entrypoint] Nginx 配置校验失败，拒绝启动"
+    exit 1
+fi
+
 echo "[entrypoint] 启动 Go 应用：${ADDR:-127.0.0.1:8081}"
 /app/server &
 app_pid=$!

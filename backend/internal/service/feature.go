@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"gorm.io/gorm"
@@ -12,13 +13,31 @@ import (
 )
 
 // Features 功能入口域：展示字段（标题/描述/标签/图标）与内网地址统一入库管理。
-// 公开列表只含展示字段；URL 仅在通过点击鉴权后按需下发，永不进入前端产物。
+// 公开列表只含展示字段；URL 仅在通过点击鉴权后按需下发（redirect 模式），
+// 或由中转网关在服务端使用、永不下发（proxy 模式）。
 type Features struct{ db *gorm.DB }
 
 func NewFeatures(db *gorm.DB) *Features { return &Features{db: db} }
 
 // ErrFeatureNotConfigured 功能地址尚未配置（功能未上线）。
 var ErrFeatureNotConfigured = errors.New("该功能尚未配置地址")
+
+// 接入方式：
+//   - redirect：点击直跳——鉴权后下发 URL，浏览器直接跳过去；
+//   - proxy：中转网关——浏览器打开 //PublicHost/（固定域名，不随访问方式变），
+//     由本服务反向代理到 URL，上游零暴露。
+const (
+	ModeRedirect = "redirect"
+	ModeProxy    = "proxy"
+)
+
+// publicHostPattern 对外主机名：小写字母/数字/连字符/点（去端口、无路径）。
+var publicHostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
+
+// ValidPublicHost 校验对外主机名（如 cvat.example.com；也允许裸 IP）。
+func ValidPublicHost(host string) bool {
+	return len(host) <= 253 && publicHostPattern.MatchString(host)
+}
 
 // AllowedIcons 图标白名单（与前端 design/featureIcons.ts 的 56 个键保持一致，
 // 两边必须同改）。
@@ -64,11 +83,13 @@ func validIcon(icon string) bool {
 
 // FeatureInput 新建/编辑功能的输入。
 type FeatureInput struct {
-	Title string `json:"title"`
-	Desc  string `json:"desc"`
-	Tag   string `json:"tag"`
-	Icon  string `json:"icon"`
-	URL   string `json:"url"`
+	Title      string `json:"title"`
+	Desc       string `json:"desc"`
+	Tag        string `json:"tag"`
+	Icon       string `json:"icon"`
+	URL        string `json:"url"`
+	Mode       string `json:"mode"`
+	PublicHost string `json:"publicHost"`
 }
 
 // normalizeAndValidate 清洗并校验展示字段与地址（地址可为空 = 未上线）。
@@ -78,6 +99,8 @@ func (in *FeatureInput) normalizeAndValidate() error {
 	in.Tag = strings.TrimSpace(in.Tag)
 	in.Icon = strings.TrimSpace(in.Icon)
 	in.URL = strings.TrimSpace(in.URL)
+	in.Mode = strings.TrimSpace(in.Mode)
+	in.PublicHost = strings.ToLower(strings.TrimSpace(in.PublicHost))
 
 	if n := len([]rune(in.Title)); n < 1 || n > 12 {
 		return errors.New("标题需为 1-12 个字符")
@@ -90,6 +113,21 @@ func (in *FeatureInput) normalizeAndValidate() error {
 	}
 	if !validIcon(in.Icon) {
 		return errors.New("图标不在允许列表内")
+	}
+
+	if in.Mode == "" {
+		in.Mode = ModeRedirect
+	}
+	if in.Mode != ModeRedirect && in.Mode != ModeProxy {
+		return errors.New("接入方式只能是 redirect 或 proxy")
+	}
+	if in.Mode == ModeProxy {
+		if !ValidPublicHost(in.PublicHost) {
+			return errors.New("对外主机名格式不正确（如 cvat.example.com）")
+		}
+	} else {
+		// 直跳模式不使用主机名，清空避免脏数据
+		in.PublicHost = ""
 	}
 	return validateFeatureURL(in.URL)
 }
@@ -132,6 +170,34 @@ func (f *Features) Get(ctx context.Context, key string) (*model.Feature, error) 
 	return &item, nil
 }
 
+// GetByPublicHost 供中转网关按请求 Host 认领功能（仅认领 proxy 模式）。
+func (f *Features) GetByPublicHost(ctx context.Context, host string) (*model.Feature, error) {
+	var item model.Feature
+	if err := f.db.WithContext(ctx).First(&item, "public_host = ? AND mode = ?", host, ModeProxy).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// ensureHostAvailable 对外主机名全局唯一（空值不占用）。
+func (f *Features) ensureHostAvailable(ctx context.Context, host, selfKey string) error {
+	if host == "" {
+		return nil
+	}
+	q := f.db.WithContext(ctx).Model(&model.Feature{}).Where("public_host = ?", host)
+	if selfKey != "" {
+		q = q.Where("key <> ?", selfKey)
+	}
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("该对外主机名已被其他功能使用")
+	}
+	return nil
+}
+
 // GetURL 读内网地址；未配置返回 ErrFeatureNotConfigured。
 func (f *Features) GetURL(ctx context.Context, key string) (string, error) {
 	item, err := f.Get(ctx, key)
@@ -152,6 +218,9 @@ func (f *Features) Create(ctx context.Context, in FeatureInput) (*model.Feature,
 	if err := in.normalizeAndValidate(); err != nil {
 		return nil, err
 	}
+	if err := f.ensureHostAvailable(ctx, in.PublicHost, ""); err != nil {
+		return nil, err
+	}
 
 	var maxSort int
 	if err := f.db.WithContext(ctx).Model(&model.Feature{}).
@@ -165,13 +234,15 @@ func (f *Features) Create(ctx context.Context, in FeatureInput) (*model.Feature,
 			return nil, err
 		}
 		item := model.Feature{
-			Key:   key,
-			Title: in.Title,
-			Desc:  in.Desc,
-			Tag:   in.Tag,
-			Icon:  in.Icon,
-			URL:   in.URL,
-			Sort:  maxSort + 1,
+			Key:        key,
+			Title:      in.Title,
+			Desc:       in.Desc,
+			Tag:        in.Tag,
+			Icon:       in.Icon,
+			URL:        in.URL,
+			Mode:       in.Mode,
+			PublicHost: in.PublicHost,
+			Sort:       maxSort + 1,
 		}
 		err = f.db.WithContext(ctx).Create(&item).Error
 		if err == nil {
@@ -189,13 +260,18 @@ func (f *Features) Update(ctx context.Context, key string, in FeatureInput) erro
 	if err := in.normalizeAndValidate(); err != nil {
 		return err
 	}
+	if err := f.ensureHostAvailable(ctx, in.PublicHost, key); err != nil {
+		return err
+	}
 
 	res := f.db.WithContext(ctx).Model(&model.Feature{}).Where("key = ?", key).Updates(map[string]any{
-		"title": in.Title,
-		"desc":  in.Desc,
-		"tag":   in.Tag,
-		"icon":  in.Icon,
-		"url":   in.URL,
+		"title":       in.Title,
+		"desc":        in.Desc,
+		"tag":         in.Tag,
+		"icon":        in.Icon,
+		"url":         in.URL,
+		"mode":        in.Mode,
+		"public_host": in.PublicHost,
 	})
 	if res.Error != nil {
 		return res.Error
@@ -253,12 +329,12 @@ func (f *Features) EnsureDefaults(ctx context.Context) error {
 		return nil
 	}
 	defaults := []model.Feature{
-		{Key: "terminal", Title: "在线终端", Desc: "把常用脚本收进浏览器，随时执行。", Tag: "开发", Icon: "terminal", Sort: 0},
-		{Key: "chart", Title: "数据看板", Desc: "把散落的指标汇总成一张图。", Tag: "分析", Icon: "chart", Sort: 1},
-		{Key: "cloud", Title: "资源托管", Desc: "静态资源与文件的分发入口。", Tag: "基建", Icon: "cloud", Sort: 2},
-		{Key: "shield", Title: "安全工具", Desc: "限流、封禁与访问审计。", Tag: "安全", Icon: "shield", Sort: 3},
-		{Key: "book", Title: "笔记归档", Desc: "长期沉淀的技术笔记索引。", Tag: "内容", Icon: "book", Sort: 4},
-		{Key: "wrench", Title: "实验工坊", Desc: "还没定型的小玩意都放这儿。", Tag: "实验", Icon: "wrench", Sort: 5},
+		{Key: "terminal", Title: "在线终端", Desc: "把常用脚本收进浏览器，随时执行。", Tag: "开发", Icon: "terminal", Mode: ModeRedirect, Sort: 0},
+		{Key: "chart", Title: "数据看板", Desc: "把散落的指标汇总成一张图。", Tag: "分析", Icon: "chart", Mode: ModeRedirect, Sort: 1},
+		{Key: "cloud", Title: "资源托管", Desc: "静态资源与文件的分发入口。", Tag: "基建", Icon: "cloud", Mode: ModeRedirect, Sort: 2},
+		{Key: "shield", Title: "安全工具", Desc: "限流、封禁与访问审计。", Tag: "安全", Icon: "shield", Mode: ModeRedirect, Sort: 3},
+		{Key: "book", Title: "笔记归档", Desc: "长期沉淀的技术笔记索引。", Tag: "内容", Icon: "book", Mode: ModeRedirect, Sort: 4},
+		{Key: "wrench", Title: "实验工坊", Desc: "还没定型的小玩意都放这儿。", Tag: "实验", Icon: "wrench", Mode: ModeRedirect, Sort: 5},
 	}
 	return f.db.WithContext(ctx).Create(&defaults).Error
 }

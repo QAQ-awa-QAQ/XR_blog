@@ -24,13 +24,15 @@ func NewFeatureAdminHandler(features *service.Features) *FeatureAdminHandler {
 
 // adminFeatureDTO 管理端视图：含内网地址（仅 admin 接口下发）。
 type adminFeatureDTO struct {
-	Key   string `json:"key"`
-	Title string `json:"title"`
-	Desc  string `json:"desc"`
-	Tag   string `json:"tag"`
-	Icon  string `json:"icon"`
-	URL   string `json:"url"`
-	Sort  int    `json:"sort"`
+	Key        string `json:"key"`
+	Title      string `json:"title"`
+	Desc       string `json:"desc"`
+	Tag        string `json:"tag"`
+	Icon       string `json:"icon"`
+	URL        string `json:"url"`
+	Mode       string `json:"mode"`
+	PublicHost string `json:"publicHost"`
+	Sort       int    `json:"sort"`
 }
 
 // publicFeatureDTO 公开视图：**绝不含 URL**。
@@ -44,7 +46,8 @@ type publicFeatureDTO struct {
 
 func toAdminFeatureDTO(item model.Feature) adminFeatureDTO {
 	return adminFeatureDTO{
-		Key: item.Key, Title: item.Title, Desc: item.Desc, Tag: item.Tag, Icon: item.Icon, URL: item.URL, Sort: item.Sort,
+		Key: item.Key, Title: item.Title, Desc: item.Desc, Tag: item.Tag, Icon: item.Icon,
+		URL: item.URL, Mode: item.Mode, PublicHost: item.PublicHost, Sort: item.Sort,
 	}
 }
 

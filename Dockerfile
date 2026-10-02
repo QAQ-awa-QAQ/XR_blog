@@ -33,12 +33,14 @@ RUN apk add --no-cache tzdata
 WORKDIR /app
 COPY --from=api /out/server            /app/server
 COPY --from=web /app/web/dist          /usr/share/nginx/html
-COPY deploy/nginx.conf                 /etc/nginx/nginx.conf
+COPY deploy/nginx.conf.template        /app/nginx.conf.template
+COPY deploy/gateway-server.conf        /app/gateway-server.conf
 COPY deploy/entrypoint.sh              /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && mkdir -p /data
 
-# Nginx 对外 80，Go 只在回环口监听，外部无法绕过闸门直连
-EXPOSE 80
+# Nginx 对外 80（博客）与 8808（中转网关，仅 GATEWAY_ENABLED=true 时监听）；
+# Go 只在回环口监听，外部无法绕过闸门直连
+EXPOSE 80 8808
 
 ENV ADDR=127.0.0.1:8081 \
     DB_PATH=/data/blog.db \

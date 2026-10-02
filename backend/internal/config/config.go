@@ -9,13 +9,18 @@ import (
 
 // Config 全部来自环境变量并带可用默认值，本机直跑与容器部署共用同一套代码。
 type Config struct {
-	Addr           string // Go 监听地址；容器内为 127.0.0.1:8081，仅由 Nginx 反代
-	DBPath         string
-	RedisAddr      string
-	RedisPassword  string
-	RedisDB        int
-	SessionTTL     time.Duration
-	CookieSecure   bool
+	Addr          string // Go 监听地址；容器内为 127.0.0.1:8081，仅由 Nginx 反代
+	DBPath        string
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+	SessionTTL    time.Duration
+	CookieSecure  bool
+	// CookieDomain 会话 Cookie 的 Domain（如 .example.com）：中转网关跨子域需要；
+	// 为空则维持 host-only（现状）。
+	CookieDomain string
+	// BlogPublicURL 网关拦截页里的“回博客”链接（如 https://blog.example.com）；可空。
+	BlogPublicURL  string
 	TrustedProxies []string
 	AdminAccount   string
 	AdminPassword  string // 为空则冷启动时随机生成并打印到日志
@@ -39,6 +44,8 @@ func Load() Config {
 		RedisDB:        envInt("REDIS_DB", 0),
 		SessionTTL:     envDur("SESSION_TTL", 7*24*time.Hour),
 		CookieSecure:   envBool("COOKIE_SECURE", true),
+		CookieDomain:   env("COOKIE_DOMAIN", ""),
+		BlogPublicURL:  strings.TrimRight(env("BLOG_PUBLIC_URL", ""), "/"),
 		TrustedProxies: envList("TRUSTED_PROXIES", []string{"127.0.0.1", "::1"}),
 		AdminAccount:   env("ADMIN_ACCOUNT", "admin"),
 		AdminPassword:  env("ADMIN_PASSWORD", ""),

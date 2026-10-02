@@ -131,10 +131,17 @@ export function FeaturesSection({ user }: { user: User }) {
 
     setOpening(key)
     try {
-      const { url } = await api.access.openFeature(key)
-      // 双保险：后端已限制 http(s)，前端再校验一次前缀才交给浏览器
-      if (/^https?:\/\//i.test(url)) {
-        win.location.replace(url)
+      const res = await api.access.openFeature(key)
+      // proxy：经本站中转——打开固定域名（外网穿透映射到网关端口；
+      // 局域网访问时本站约定网关在 8088 同宿主的 8808 端口），
+      // 上游真实地址只在服务端使用、从不下发。
+      // redirect：保持直跳，前端再校验一次前缀才交给浏览器。
+      const target =
+        res.mode === 'proxy'
+          ? `${window.location.protocol}//${res.host}${window.location.port === '8088' ? ':8808' : ''}/`
+          : res.url
+      if (/^https?:\/\//i.test(target)) {
+        win.location.replace(target)
       } else {
         win.close()
         setNotice('该功能地址不合法，已阻止打开。')

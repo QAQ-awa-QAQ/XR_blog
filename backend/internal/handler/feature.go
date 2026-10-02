@@ -3,8 +3,10 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"personal_blog/internal/httpx"
 	"personal_blog/internal/middleware"
@@ -49,8 +51,8 @@ func FeatureOpen(features *service.Features, access *service.Access) gin.Handler
 			}
 		}
 
-		target, err := features.GetURL(ctx, key)
-		if errors.Is(err, service.ErrFeatureNotConfigured) {
+		item, err := features.Get(ctx, key)
+		if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && strings.TrimSpace(item.URL) == "") {
 			httpx.Fail(c, http.StatusNotFound, "not_configured", "该功能暂未开放")
 			return
 		}
@@ -59,7 +61,16 @@ func FeatureOpen(features *service.Features, access *service.Access) gin.Handler
 			return
 		}
 
+		// 响应永不下发上游地址（proxy 模式下浏览器只需知道对外域名）
 		c.Header("Cache-Control", "no-store")
-		httpx.OK(c, gin.H{"url": target})
+		if item.Mode == service.ModeProxy {
+			if item.PublicHost == "" {
+				httpx.Fail(c, http.StatusNotFound, "not_configured", "该功能暂未开放")
+				return
+			}
+			httpx.OK(c, gin.H{"mode": "proxy", "host": item.PublicHost})
+			return
+		}
+		httpx.OK(c, gin.H{"mode": "redirect", "url": item.URL})
 	}
 }

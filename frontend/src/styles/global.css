@@ -134,6 +134,13 @@ body,
   height: 100%;
 }
 
+/* 移动端浏览器默认会给被点元素盖一层「点击高光」（古早的浅蓝色块）。
+   关掉它，按压反馈改由控件自己的缩放承担（见 button:active）。
+   它是**继承**属性，写在根上即可全局生效 */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* 组件样式里的 display（如 .panel 的 grid）会盖掉 hidden 属性的
    UA 默认 display:none —— 这里统一兜底，让 hidden 永远生效 */
 [hidden] {
@@ -167,6 +174,15 @@ h3 {
 button {
   font: inherit;
   color: inherit;
+}
+
+/* 触屏按压反馈：控件轻轻缩小（替代被禁用的点击高光）。
+   用独立的 scale 属性，不去碰 transform —— 那是 GSAP 的地盘；
+   ⚠️ 这里不写 transition：简写会盖掉各按钮自己的过渡定义 */
+button:active,
+[role='button']:active,
+[role='tab']:active {
+  scale: 0.96;
 }
 
 :focus-visible {
@@ -1823,6 +1839,39 @@ button {
   text-align: left;
 }
 
+/* 点击行为选择：两张小卡（直跳 / 中转网关），与图标选择器同一套交互口径 */
+.mode-pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mode-pick__item {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: var(--glass-2);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.mode-pick__item small {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mode-pick__item[aria-checked='true'] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+
 /* 图标选择器：全部图标的预览网格（与卡片同口径渲染，所见即所得） */
 .icon-picker {
   display: grid;
@@ -2306,21 +2355,31 @@ code {
 
   .shell {
     grid-template-columns: 1fr;
-    /* 横条在**底部**：视口占满剩余，横条落在最后一行。
-       DOM 里侧栏在视口前面，所以靠 order 把它排到后头 */
-    grid-template-rows: 1fr auto;
+    /* 内容区**占满全高**；底栏不再占行，改为悬浮在内容之上（见下面 .sidebar）。
+       原先的 `1fr auto` 会在底部留一条**与屏幕等宽**的独立行：内容被切短
+       （视口矮 66px），底栏下面垫着一块"遮盖"——它只是布局空间，不是任何
+       元素画的，所以给它染色永远染不上。 */
+    grid-template-rows: 1fr;
+    /* 悬浮底栏的厚度（与 .sidebar 的 height 同一口径）——
+       正文的底部安全区（.section 的 padding-bottom）也引用它 */
+    --mobile-dock-h: calc((48px - (60px * var(--sidebar-scale) - var(--sidebar-width))) * var(--mobile-grow) + 5px);
   }
 
   .sidebar {
-    order: 1;
-    margin: 0 var(--space-md) var(--space-md);
-    /* 长度**贴着按钮**：justify-self 让它不再被网格拉满，宽度收缩到内容；
-       再靠 .sidebar__nav 的负外边距把首尾两枚胶囊顶出轨道两端 —— 与桌面同一条手法。
-       （桌面是"长度由内容决定 + 负 margin-block"，这里是"长度由内容决定 + 负 margin-inline"） */
-    justify-self: center;
+    /* **悬浮**在内容之上：脱离网格流，钉在屏幕底部水平居中 ——
+       视口因此占满全高，滚动时内容会从玻璃轨道**下面**经过。
+       宽度仍是收缩到内容（absolute 下为 shrink-to-fit），
+       负 margin 的胶囊手法照旧（见 .sidebar__nav）。
+       ⚠️ margin 必须清零：基础规则那组 24px 外边距在绝对定位下会
+       直接推进 left/bottom 的解得值（实测 left +24、bottom +24） */
+    position: absolute;
+    left: 50%;
+    bottom: var(--space-md);
+    margin: 0;
+    transform: translateX(-50%);
     /* 厚度 = 胶囊高 - 两倍溢出，末尾那个 +5px 是这一次的「上下加宽」。
-       溢出的量与桌面左 / 右溢出同源，一起放大 */
-    height: calc((48px - (60px * var(--sidebar-scale) - var(--sidebar-width))) * var(--mobile-grow) + 5px);
+       口径在 .shell 的 --mobile-dock-h（正文底部安全区也用它） */
+    height: var(--mobile-dock-h);
     /* 两端各多留 5px（轨道长度合计 +10px）——
        轨道宽度是收缩到内容的，所以加内边距就等于加长度；
        顺带把首尾胶囊「顶出轨道」的量从 12.34 收到 7.34，图标就不再贴着边线 */
@@ -2328,6 +2387,13 @@ code {
     flex-direction: row;
     align-items: center;
     justify-content: center;
+  }
+
+  /* 底栏是**悬浮盖在正文上**的：给正文底部留出安全区 ——
+     滚动到底时最后一行停在底栏上方（留一个呼吸位）；
+     不滚动（垂直居中）时视觉中心也相应上移 */
+  .section {
+    padding-bottom: calc(var(--mobile-dock-h) + var(--space-md) * 2);
   }
 
   .sidebar__nav {
@@ -2354,8 +2420,10 @@ code {
 
 @media (max-width: 560px) {
   .section {
-    /* 底部那 84px 原本是给翻页指示让位的；它在手机上已经删掉，这里归零 */
+    /* 底部那 84px 原本是给翻页指示让位的；它在手机上已经删掉。
+       留下的是悬浮底栏的底部安全区（口径见手机段） */
     padding: var(--space-lg) var(--space-md);
+    padding-bottom: calc(var(--mobile-dock-h) + var(--space-md) * 2);
   }
 
   .contact,

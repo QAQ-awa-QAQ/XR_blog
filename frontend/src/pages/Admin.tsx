@@ -199,7 +199,15 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
     void run(() => api.admin.deleteFeature(item.key))
   }
 
-  const submitFeature = (input: { title: string; desc: string; tag: string; icon: string; url: string }) =>
+  const submitFeature = (input: {
+    title: string
+    desc: string
+    tag: string
+    icon: string
+    url: string
+    mode: string
+    publicHost: string
+  }) =>
     void run(async () => {
       if (featureDraft === 'new') await api.admin.createFeature(input)
       else if (featureDraft) await api.admin.updateFeature(featureDraft.key, input)
@@ -697,8 +705,15 @@ export function Admin({ themeLabel, onExit }: { themeLabel: string; onExit: () =
                   ⠿
                 </span>
                 <span className="endpoint-row__name">{item.title}</span>
-                <span className="field__hint endpoint-row__url" title={item.url || '未配置地址'}>
-                  {item.url || '未配置地址'}
+                <span
+                  className="field__hint endpoint-row__url"
+                  title={
+                    item.mode === 'proxy'
+                      ? `中转 → ${item.publicHost || '未配置对外主机名'}`
+                      : item.url || '未配置地址'
+                  }
+                >
+                  {item.mode === 'proxy' ? `中转 → ${item.publicHost || '未配置主机名'}` : item.url || '未配置地址'}
                 </span>
                 <button type="button" className="btn btn--glass btn--sm" disabled={busy} onClick={() => setFeatureDraft(item)}>
                   编辑
@@ -734,7 +749,15 @@ function FeatureEditModal({
   draft: AdminFeature | 'new'
   busy: boolean
   onClose: () => void
-  onSubmit: (input: { title: string; desc: string; tag: string; icon: string; url: string }) => void
+  onSubmit: (input: {
+    title: string
+    desc: string
+    tag: string
+    icon: string
+    url: string
+    mode: string
+    publicHost: string
+  }) => void
 }) {
   const base = draft === 'new' ? null : draft
   const [title, setTitle] = useState(base?.title ?? '')
@@ -742,8 +765,14 @@ function FeatureEditModal({
   const [tag, setTag] = useState(base?.tag ?? '')
   const [icon, setIcon] = useState(base?.icon ?? 'terminal')
   const [url, setUrl] = useState(base?.url ?? '')
+  const [mode, setMode] = useState<'redirect' | 'proxy'>(base?.mode === 'proxy' ? 'proxy' : 'redirect')
+  const [publicHost, setPublicHost] = useState(base?.publicHost ?? '')
 
-  const ready = title.trim() !== '' && desc.trim() !== '' && tag.trim() !== ''
+  const ready =
+    title.trim() !== '' &&
+    desc.trim() !== '' &&
+    tag.trim() !== '' &&
+    (mode === 'redirect' || publicHost.trim() !== '')
 
   return (
     <Modal
@@ -758,7 +787,9 @@ function FeatureEditModal({
             type="button"
             className="btn btn--primary btn--sm"
             disabled={busy || !ready}
-            onClick={() => onSubmit({ title, desc, tag, icon, url })}
+            onClick={() =>
+              onSubmit({ title, desc, tag, icon, url, mode, publicHost: mode === 'proxy' ? publicHost : '' })
+            }
           >
             保存
           </button>
@@ -769,6 +800,31 @@ function FeatureEditModal({
         <Field label="标题" value={title} maxLength={12} onChange={(e) => setTitle(e.target.value)} />
         <Field label="描述" value={desc} maxLength={40} onChange={(e) => setDesc(e.target.value)} />
         <Field label="标签" value={tag} maxLength={6} onChange={(e) => setTag(e.target.value)} />
+        <div className="field">
+          <span className="field__label">点击行为</span>
+          <div className="mode-pick" role="radiogroup" aria-label="点击行为">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'redirect'}
+              className="mode-pick__item"
+              onClick={() => setMode('redirect')}
+            >
+              <b>直跳</b>
+              <small>浏览器直接打开内网地址（适合公网外链）</small>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'proxy'}
+              className="mode-pick__item"
+              onClick={() => setMode('proxy')}
+            >
+              <b>中转网关</b>
+              <small>经本站反代，上游零暴露、地址固定</small>
+            </button>
+          </div>
+        </div>
         <div className="field">
           <span className="field__label">图标（共 {FEATURE_ICON_NAMES.length} 个）</span>
           <div className="icon-picker" role="radiogroup" aria-label="图标">
@@ -789,12 +845,25 @@ function FeatureEditModal({
           </div>
         </div>
         <Field
-          label="内网地址"
-          hint="http(s)://…；留空 = 暂不开放点击"
+          label={mode === 'proxy' ? '上游地址（仅服务端可见）' : '内网地址'}
+          hint={
+            mode === 'proxy'
+              ? '如 http://127.0.0.1:3000/；浏览器永远看不到它，由服务端转发'
+              : 'http(s)://…；留空 = 暂不开放点击'
+          }
           value={url}
-          placeholder="http://192.168.x.x:端口/"
+          placeholder={mode === 'proxy' ? 'http://127.0.0.1:3000/' : 'http://192.168.x.x:端口/'}
           onChange={(e) => setUrl(e.target.value)}
         />
+        {mode === 'proxy' ? (
+          <Field
+            label="对外主机名"
+            hint="如 cvat.example.com：穿透/局域网把它解析到本服务器，网关按它认领该服务"
+            value={publicHost}
+            placeholder="cvat.example.com"
+            onChange={(e) => setPublicHost(e.target.value)}
+          />
+        ) : null}
       </div>
     </Modal>
   )

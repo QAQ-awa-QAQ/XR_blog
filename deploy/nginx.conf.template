@@ -25,6 +25,12 @@ http {
     gzip_min_length   1024;
     gzip_types        text/plain text/css application/javascript application/json image/svg+xml;
 
+    # WebSocket 升级握手（中转网关转发 CVAT 等实时连接时使用）
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
     # 注意：这里刻意不使用 limit_req。
     # 4.1/4.2 的阈值判定完全交给 Go 的滑动窗口；若 Nginx 先以 503 拒绝请求，
     # Go 就永远数不到 20 次，"再犯永久封禁"这条规则会直接失效。
@@ -160,4 +166,7 @@ http {
             try_files $uri $uri/ /index.html;
         }
     }
+
+    # 中转网关 server 块：entrypoint 在 GATEWAY_ENABLED=true 时插入 gateway-server.conf
+    __GATEWAY_BLOCK__
 }

@@ -8,6 +8,9 @@ data/
 frontend/node_modules/
 frontend/dist/
 
+# 后端本地构建产物
+backend/bin/
+
 # 本地环境变量
 .env
 .env.local

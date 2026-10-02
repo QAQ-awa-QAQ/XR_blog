@@ -36,8 +36,14 @@ export type Feature = {
 /** 管理端视图：额外带内网地址与排序 */
 export type AdminFeature = Feature & {
   url: string
+  /** redirect = 点击直跳；proxy = 中转网关（浏览器打开 publicHost，服务端反代到 url） */
+  mode: 'redirect' | 'proxy'
+  publicHost: string
   sort: number
 }
+
+/** 功能点击的鉴权结果：redirect 下发地址；proxy 只给对外主机名（上游地址永不下发） */
+export type FeatureOpenResult = { mode: 'redirect'; url: string } | { mode: 'proxy'; host: string }
 
 export type Ban = {
   ip: string
@@ -119,10 +125,10 @@ export const api = {
   guest: () => request<AuthResult>('/api/auth/guest', { method: 'POST' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
-  /** 功能入口点击：后端按用户组鉴权后才下发内网地址（游客一律 403） */
+  /** 功能入口点击：后端按用户组鉴权后才下发地址（游客一律 403） */
   access: {
     openFeature: (key: string) =>
-      request<{ url: string }>(`/api/features/${encodeURIComponent(key)}/open`, { method: 'POST' }),
+      request<FeatureOpenResult>(`/api/features/${encodeURIComponent(key)}/open`, { method: 'POST' }),
   },
 
   /** 主页功能入口的公开列表（仅展示字段，不含地址） */

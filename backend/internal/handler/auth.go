@@ -86,7 +86,7 @@ func (h *AuthHandler) Guest(c *gin.Context) {
 		return
 	}
 
-	httpx.SetSession(c, sid, h.cfg.SessionTTL, h.cfg.CookieSecure)
+	httpx.SetSession(c, sid, h.cfg.SessionTTL, h.cfg.CookieSecure, h.cfg.CookieDomain)
 	httpx.SetCSRF(c, csrf, h.cfg.SessionTTL, h.cfg.CookieSecure)
 	httpx.OK(c, gin.H{"user": toUserDTO(model.GuestUser(c.ClientIP())), "csrfToken": csrf})
 }
@@ -95,7 +95,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if sid, err := c.Cookie(httpx.SessionCookie); err == nil && sid != "" {
 		h.sessions.Destroy(c.Request.Context(), sid)
 	}
-	httpx.ClearSession(c, h.cfg.CookieSecure)
+	httpx.ClearSession(c, h.cfg.CookieSecure, h.cfg.CookieDomain)
 	httpx.OK(c, gin.H{"ok": true})
 }
 
@@ -124,7 +124,7 @@ func (h *AuthHandler) issueSession(c *gin.Context, user *model.User) {
 		return
 	}
 
-	httpx.SetSession(c, sid, h.cfg.SessionTTL, h.cfg.CookieSecure)
+	httpx.SetSession(c, sid, h.cfg.SessionTTL, h.cfg.CookieSecure, h.cfg.CookieDomain)
 	httpx.SetCSRF(c, csrf, h.cfg.SessionTTL, h.cfg.CookieSecure)
 	httpx.OK(c, gin.H{"user": toUserDTO(user), "csrfToken": csrf})
 }

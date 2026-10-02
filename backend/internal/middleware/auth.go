@@ -12,7 +12,7 @@ import (
 )
 
 // RequireAuth 校验会话 Cookie 并注入当前用户（同时滑动续期）。
-func RequireAuth(auth *service.Auth, sessions *service.Sessions, secure bool) gin.HandlerFunc {
+func RequireAuth(auth *service.Auth, sessions *service.Sessions, secure bool, cookieDomain string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 
@@ -24,7 +24,7 @@ func RequireAuth(auth *service.Auth, sessions *service.Sessions, secure bool) gi
 
 		userID, ok := sessions.UserID(ctx, sid)
 		if !ok {
-			httpx.ClearSession(c, secure)
+			httpx.ClearSession(c, secure, cookieDomain)
 			httpx.Fail(c, http.StatusUnauthorized, "unauthenticated", "登录已过期，请重新登录")
 			return
 		}
@@ -41,7 +41,7 @@ func RequireAuth(auth *service.Auth, sessions *service.Sessions, secure bool) gi
 		user, err := auth.FindByID(ctx, userID)
 		if err != nil {
 			sessions.Destroy(ctx, sid)
-			httpx.ClearSession(c, secure)
+			httpx.ClearSession(c, secure, cookieDomain)
 			httpx.Fail(c, http.StatusUnauthorized, "unauthenticated", "登录已过期，请重新登录")
 			return
 		}

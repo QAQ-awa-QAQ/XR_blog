@@ -99,14 +99,23 @@ type UserGroup struct {
 
 // Feature 功能入口。标题/描述/标签/图标/内网地址统一由管理后台维护；
 // 公开接口只下发展示字段，URL 永不进入前端产物。
+//
+// Mode 决定点击行为：
+//   - redirect：服务端鉴权后下发 URL，浏览器直跳（外链 / 单一网络环境）
+//   - proxy：同域网关中转——浏览器打开 //PublicHost/，由本服务反代到 URL，
+//     地址不再随访问方式（局域网 IP / 穿透域名）变化，且上游服务零暴露
+//
+// PublicHost 仅 proxy 模式使用：去端口、小写的对外主机名（如 cvat.example.com）。
 type Feature struct {
-	Key       string `gorm:"primaryKey;size:64"`
-	Title     string `gorm:"size:32;not null"`
-	Desc      string `gorm:"size:128;not null"`
-	Tag       string `gorm:"size:16;not null"`
-	Icon      string `gorm:"size:32;not null"`
-	URL       string `gorm:"size:512"`
-	Sort      int    `gorm:"not null;default:0;index"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Key        string `gorm:"primaryKey;size:64"`
+	Title      string `gorm:"size:32;not null"`
+	Desc       string `gorm:"size:128;not null"`
+	Tag        string `gorm:"size:16;not null"`
+	Icon       string `gorm:"size:32;not null"`
+	URL        string `gorm:"size:512"`
+	Mode       string `gorm:"size:16;not null;default:redirect"`
+	PublicHost string `gorm:"size:253;index"`
+	Sort       int    `gorm:"not null;default:0;index"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
