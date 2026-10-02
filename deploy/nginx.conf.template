@@ -52,10 +52,14 @@ http {
         absolute_redirect off;
 
         # 真实客户端 IP。
-        # 当前为边缘直连，$remote_addr 就是真实来源，因此只透传不追加 XFF，
-        # 避免客户端伪造 X-Forwarded-For 绕过限流。
-        # 将来前面若再加一层 Nginx/Cloudflare，只需启用 realip 模块并声明可信网段，
-        # 应用侧代码与 TRUSTED_PROXIES 配置即可原样沿用。
+        # · 直连场景：$remote_addr 即真实来源，只透传不追加 XFF，避免伪造绕过限流；
+        # · Cloudflare 隧道回源：连接源恒为 docker 网桥网关（172.19.0.1），
+        #   用 realip 从 CF-Connecting-IP 还原访客 IP —— 仅信任这一跳，
+        #   直连方伪造的头不被采纳（未接 CF 的部署下此段无害）。
+        # ⚠️ docker 网桥网关不是 172.19.0.1 的部署（网段不同）请一并改这里；
+        #    应用侧 TRUSTED_PROXIES 保持 127.0.0.1,::1 即可。
+        set_real_ip_from 172.19.0.1;
+        real_ip_header CF-Connecting-IP;
         set $client_ip $remote_addr;
 
         # 封禁页 / 冷却页由 Go 渲染（样式全部内联、零外部资源），
